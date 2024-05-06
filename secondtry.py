@@ -44,23 +44,6 @@ def create_qprocessor(name):
     return qproc
 
 def setup_network(num_nodes, node_distance, source_frequency):
-    """Setup repeater chain network.
-
-    Parameters
-    ----------
-    num_nodes : int
-        Number of nodes in the network, at least 3.
-    node_distance : float
-        Distance between nodes [km].
-    source_frequency : float
-        Frequency at which the sources create entangled qubits [Hz].
-
-    Returns
-    -------
-    :class:`~netsquid.nodes.network.Network`
-        Network component with all nodes and connections as subcomponents.
-
-    """
     if num_nodes < 3:
         raise ValueError(f"Can't create repeater chain with {num_nodes} nodes.")
     network = Network("Repeater_chain_network")
