@@ -97,6 +97,7 @@ class CorrectProtocol(NodeProtocol):
 
 #defining some equations
 #Factory to create a quantum processor for each node in the repeater chain network. Has two memory positions and the physical instructions necessary for teleportation.
+#here the duration of each gate is defined
 def create_qprocessor(name):
     noise_rate = 200
     gate_duration = 1
@@ -113,10 +114,11 @@ def create_qprocessor(name):
                              mem_noise_models=[mem_noise_model] * 2,
                              phys_instructions=physical_instructions)
     return qproc
+#num_position to be changed to num_postion=links specifically for quantum 
+
 
 #In this part the chain network is defined, an integer number of nodes is expected
 #along with the distance between nodes and source frequency
-#are this parameters necesary for us?
 def setup_network(num_nodes, node_distance, source_frequency):
     if num_nodes < 3:
         raise ValueError(f"Can't create repeater chain with {num_nodes} nodes.")
@@ -137,7 +139,6 @@ def setup_network(num_nodes, node_distance, source_frequency):
                                      source_frequency=source_frequency)
         # Add a noise model which depolarizes the qubits exponentially
         # depending on the connection length
-        ###########I think this is not important if we want to make a perfect quantum network.
         for channel_name in ['qchannel_C2A', 'qchannel_C2B']:
             qconn.subcomponents[channel_name].models['quantum_noise_model'] =\
                 FibreDepolarizeModel()
@@ -158,7 +159,8 @@ def setup_network(num_nodes, node_distance, source_frequency):
                 lambda message, _node=node: _node.ports["ccon_R"].tx_output(message))
     return network
 
-#I don't really understand this part, but apparently is a way to put protocols into the chain(?)
+#How a protocol is designed, check, and create one like this we need swap and purification take link as input
+#how many parallel links we need for a high q link
 def setup_repeater_protocol(network):
     protocol = LocalProtocol(nodes=network.nodes)
     # Add SwapProtocol to all repeater nodes. Note: we use unique names,
@@ -171,9 +173,8 @@ def setup_repeater_protocol(network):
     subprotocol = CorrectProtocol(nodes[-1], len(nodes))
     protocol.add_subprotocol(subprotocol)
     return protocol
-
-#after correction protocolis finished this part of the program calculates the fidelity. This might need
-#to be changed in the future to adapt the new fidelity
+#add lines here
+#after correction protocol is finished this part of the program calculates the fidelity. 
 def setup_datacollector(network, protocol):
     # Ensure nodes are ordered in the chain:
     nodes = [network.nodes[name] for name in sorted(network.nodes.keys())]
@@ -208,8 +209,10 @@ def run_simulation(num_nodes=4, node_distance=20, num_iters=100):
 def create_plot(num_iters=2000):
     from matplotlib import pyplot as plt
     fig, ax = plt.subplots()
+    #this defines the lengths 
     for distance in [10, 30, 50]:
         data = pandas.DataFrame()
+        #this the number of nodes
         for num_node in range(3, 20):
             data[num_node] = run_simulation(num_nodes=num_node,
                                             node_distance=distance / num_node,
@@ -251,3 +254,5 @@ class FibreDepolarizeModel(QuantumErrorModel):
 if __name__ == "__main__":
     ns.set_qstate_formalism(ns.QFormalism.DM)
     create_plot(20)
+
+print (ns.sim_time(),"ns")
