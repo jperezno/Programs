@@ -408,11 +408,12 @@ def setup_repeater_protocol(network):
     # Add SwapProtocol to all repeater nodes. Note: we use unique names,
     # since the subprotocols would otherwise overwrite each other in the main protocol.
     nodes = [network.nodes[name] for name in sorted(network.nodes.keys())]
-    num_swaps_per_group = len(nodes)//2 # Set the desired number of swaps per odd/even group
+    num_swaps_per_group = len(nodes)//2 # Set the desired number of swaps, idk if this should go in the loop   
     for node in nodes[1:-1]:
         for offset in [1, 2]:
             if node == nodes[offset::2][0]:  # Check if 'node' is the first in the current group
-                for _ in range(num_swaps_per_group):  # Repeat swap for the set number of times
+                for i in range(num_swaps_per_group):  # Repeat swap for the set number of times
+                    print ('numberofnodes=',num_swaps_per_group)
                     subprotocol = SwapProtocol(node=node, name=f"Swap_{node.name}")
                     protocol.add_subprotocol(subprotocol) 
     # Add CorrectProtocol to Bob
@@ -455,7 +456,7 @@ def setup_datacollector(network, protocol):
     return dc
 
 
-def run_simulation(num_nodes=12, node_distance=50, num_iters=100):
+def run_simulation(num_nodes=25, node_distance=10, num_iters=100):
     """Run the simulation experiment and return the collected data.
 
     Parameters
@@ -497,7 +498,7 @@ def create_plot(num_iters=2000):
     """
     from matplotlib import pyplot as plt
     fig, ax = plt.subplots()
-    for distance in [10, 30, 50]:
+    for distance in [10,20, 50, 100]:
         data = pandas.DataFrame()
         for num_node in range(3, 20):
             data[num_node] = run_simulation(num_nodes=num_node,
