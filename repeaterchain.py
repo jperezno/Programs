@@ -183,6 +183,7 @@ As we see in the figure below, the error-bars now become negligible:
 import pandas
 import pydynaa
 import numpy as np
+import math
 
 import netsquid as ns
 from netsquid.qubits import ketstates as ks
@@ -239,22 +240,33 @@ class SwapProtocol(NodeProtocol):
 
 
 class SwapCorrectProgram(QuantumProgram):
+    """Quantum processor program that applies all swap corrections."""
     default_num_qubits = 1
 
     def set_corrections(self, x_corr, z_corr):
-        self.x_corr = x_corr
-        self.z_corr = z_corr
+        self.x_corr = x_corr % 2
+        self.z_corr = z_corr % 2
 
     def program(self):
         q1, = self.get_qubit_indices(1)
-        if self.x_corr % 2 == 1:
+        if self.x_corr == 1:
             self.apply(INSTR_X, q1)
-        if self.z_corr % 2 == 1:
+        if self.z_corr == 1:
             self.apply(INSTR_Z, q1)
         yield self.run()
-        
+
 
 class CorrectProtocol(NodeProtocol):
+    """Perform corrections for a swap on an end-node.
+
+    Parameters
+    ----------
+    node : :class:`~netsquid.nodes.node.Node` or None, optional
+        Node this protocol runs on.
+    num_nodes : int
+        Number of nodes in the repeater chain network.
+
+    """
 
     def __init__(self, node, num_nodes):
         super().__init__(node, "CorrectProtocol")
@@ -271,35 +283,19 @@ class CorrectProtocol(NodeProtocol):
             if message is None or len(message.items) != 1:
                 continue
             m = message.items[0]
-            if m == ns.BellIndex.B01 or m == ns.BellIndex.B11:
+            if m == ks.BellIndex.B01 or m == ks.BellIndex.B11:
                 self._x_corr += 1
-            if m == ns.BellIndex.B10 or m == ns.BellIndex.B11:
+            if m == ks.BellIndex.B10 or m == ks.BellIndex.B11:
                 self._z_corr += 1
             self._counter += 1
             if self._counter == self.num_nodes - 2:
                 if self._x_corr or self._z_corr:
                     self._program.set_corrections(self._x_corr, self._z_corr)
                     yield self.node.qmemory.execute_program(self._program, qubit_mapping=[1])
-                    
-                # Fidelity calculation
-                fidelity = self._calculate_fidelity()
-                self.node.qmemory.subcomponents["fidelity"] = fidelity # Store fidelity in the subcomponent
-                print(f"Fidelity after correction at node {self.node.name}: {fidelity}")
-                #...rest of your code
-                
-                self.send_signal(ns.Signals.SUCCESS)
+                self.send_signal(Signals.SUCCESS)
                 self._x_corr = 0
                 self._z_corr = 0
                 self._counter = 0
-
-    def _calculate_fidelity(self):
-        """Calculate fidelity after error correction."""
-        # Get the corrected qubit
-        qubit = self.node.qmemory.peek(1)[0] 
-        # Calculate and return fidelity
-        fidelity = ns.qubits.fidelity(qubit, ns.qubits.ketstates.s0, squared=True)
-        return fidelity
-
 
 
 def create_qprocessor(name):
@@ -412,58 +408,15 @@ def setup_repeater_protocol(network):
     # Add SwapProtocol to all repeater nodes. Note: we use unique names,
     # since the subprotocols would otherwise overwrite each other in the main protocol.
     nodes = [network.nodes[name] for name in sorted(network.nodes.keys())]
+    num_swaps_per_group = 3 # Set the desired number of swaps per odd/even group
     for node in nodes[1:-1]:
-        subprotocol = SwapProtocol(node=node, name=f"Swap_{node.name}")
-        protocol.add_subprotocol(subprotocol)
+        for offset in [1, 2]:
+            if node == nodes[offset::2][0]:  # Check if 'node' is the first in the current group
+                for _ in range(num_swaps_per_group):  # Repeat swap for the set number of times
+                    subprotocol = SwapProtocol(node=node, name=f"Swap_{node.name}")
+                    protocol.add_subprotocol(subprotocol) 
     # Add CorrectProtocol to Bob
     subprotocol = CorrectProtocol(nodes[-1], len(nodes))
-    protocol.add_subprotocol(subprotocol)
-    return protocol
-
-def setup_nested_repeater_protocol(network):
-    """Setup nested repeater protocol on a repeater chain network.
-
-    Parameters
-    ----------
-    network : :class:`~netsquid.nodes.network.Network`
-        Repeater chain network to put protocols on.
-
-    Returns
-    -------
-    :class:`~netsquid.protocols.protocol.Protocol`
-        Protocol holding all subprotocols used in the network.
-
-    """
-
-    protocol = LocalProtocol(nodes=network.nodes)
-    num_nodes = len(network.nodes)
-    abc = [0,0,0]
-
-    # Nested Swapping Logic
-    def create_nested_swaps(start_idx, end_idx, level):
-        if start_idx >= end_idx:  # Base case: single node or invalid range
-            return
-
-        mid_idx = (start_idx + end_idx) // 2  # Find the middle node
-
-        # Create SwapProtocol for the middle node
-        node = network.nodes[sorted(network.nodes.keys())[mid_idx]]
-        subprotocol = SwapProtocol(
-            node=node, name=f"Swap_{node.name}_Level{level}"
-        )
-        protocol.add_subprotocol(subprotocol)
-        abc.append([start_idx])
-
-        # Recursively create swaps for left and right halves
-        create_nested_swaps(start_idx, mid_idx - 1, level + 1)
-        create_nested_swaps(mid_idx + 1, end_idx, level + 1)
-
-    # Start the nested swapping from the entire chain at level 0
-    create_nested_swaps(1, num_nodes - 2, 0) 
-    print(num_nodes)
-    print(abc)
-    # Add CorrectProtocol to Bob (the last node)
-    subprotocol = CorrectProtocol(network.nodes[sorted(network.nodes.keys())[-1]], num_nodes)
     protocol.add_subprotocol(subprotocol)
     return protocol
 
@@ -486,26 +439,23 @@ def setup_datacollector(network, protocol):
         Datacollector recording fidelity data.
 
     """
+    # Ensure nodes are ordered in the chain:
     nodes = [network.nodes[name] for name in sorted(network.nodes.keys())]
 
     def calc_fidelity(evexpr):
-        # Get the qubit from the final node's memory (assuming it's in position 1)
-        qubit, = nodes[-1].qmemory.peek([1])  
-        fidelity = ns.qubits.fidelity(qubit, ks.b00, squared=True)
+        qubit_a, = nodes[0].qmemory.peek([0])
+        qubit_b, = nodes[-1].qmemory.peek([1])
+        fidelity = ns.qubits.fidelity([qubit_a, qubit_b], ks.b00, squared=True)
+        print(fidelity)
         return {"fidelity": fidelity}
 
     dc = DataCollector(calc_fidelity, include_entity_name=False)
-    dc.collect_on(
-        pydynaa.EventExpression(
-            source=protocol.subprotocols["CorrectProtocol"],
-            event_type=Signals.SUCCESS.value
-        )
-    )
+    dc.collect_on(pydynaa.EventExpression(source=protocol.subprotocols['CorrectProtocol'],
+                                          event_type=Signals.SUCCESS.value))
     return dc
 
 
-
-def run_simulation(num_nodes=3, node_distance=20, num_iters=100):
+def run_simulation(num_nodes=4, node_distance=20, num_iters=100):
     """Run the simulation experiment and return the collected data.
 
     Parameters
@@ -523,13 +473,12 @@ def run_simulation(num_nodes=3, node_distance=20, num_iters=100):
         Dataframe with recorded fidelity data.
 
     """
+    print(num_nodes)
     ns.sim_reset()
-    num_nodes=9
     est_runtime = (0.5 + num_nodes - 1) * node_distance * 5e3
-    network = setup_network(
-        num_nodes, node_distance=node_distance, source_frequency=1e9 / est_runtime
-    )
-    protocol = setup_nested_repeater_protocol(network)
+    network = setup_network(num_nodes, node_distance=node_distance,
+                            source_frequency=1e9 / est_runtime)
+    protocol = setup_repeater_protocol(network)
     dc = setup_datacollector(network, protocol)
     protocol.start()
     ns.sim_run(est_runtime * num_iters)
