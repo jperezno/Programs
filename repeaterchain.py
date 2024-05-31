@@ -408,7 +408,7 @@ def setup_repeater_protocol(network):
     # Add SwapProtocol to all repeater nodes. Note: we use unique names,
     # since the subprotocols would otherwise overwrite each other in the main protocol.
     nodes = [network.nodes[name] for name in sorted(network.nodes.keys())]
-    num_swaps_per_group = 3 # Set the desired number of swaps per odd/even group
+    num_swaps_per_group = len(nodes)//2 # Set the desired number of swaps per odd/even group
     for node in nodes[1:-1]:
         for offset in [1, 2]:
             if node == nodes[offset::2][0]:  # Check if 'node' is the first in the current group
@@ -455,7 +455,7 @@ def setup_datacollector(network, protocol):
     return dc
 
 
-def run_simulation(num_nodes=4, node_distance=20, num_iters=100):
+def run_simulation(num_nodes=12, node_distance=50, num_iters=100):
     """Run the simulation experiment and return the collected data.
 
     Parameters
