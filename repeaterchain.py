@@ -408,14 +408,19 @@ def setup_repeater_protocol(network):
     # Add SwapProtocol to all repeater nodes. Note: we use unique names,
     # since the subprotocols would otherwise overwrite each other in the main protocol.
     nodes = [network.nodes[name] for name in sorted(network.nodes.keys())]
-    num_swaps_per_group = len(nodes)//2 # Set the desired number of swaps, idk if this should go in the loop   
-    for node in nodes[1:-1]:
-        for offset in [1, 2]:
-            if node == nodes[offset::2][0]:  # Check if 'node' is the first in the current group
-                for i in range(num_swaps_per_group):  # Repeat swap for the set number of times
-                    print ('numberofnodes=',num_swaps_per_group)
-                    subprotocol = SwapProtocol(node=node, name=f"Swap_{node.name}")
-                    protocol.add_subprotocol(subprotocol) 
+    nodes_copy=nodes.copy() #a copy of the original nodes
+    while len(nodes_copy)>2: #instructions until nodes is only two
+        swapped_nodes=[]
+        for i in range(len(nodes_copy)):
+            if (i % 2)==1:
+                subprotocol = SwapProtocol(node=nodes_copy[i], name=f"Swap_{nodes_copy[i].name}") #swap protocol
+                protocol.add_subprotocol(subprotocol)
+                swapped_nodes.append(nodes_copy[i]) #stores in the empty list
+                #nodes_copy.pop[i] #this might work?
+        delete= [elem for elem in nodes_copy]
+        for swapped in swapped_nodes:
+            if swapped in nodes_copy:
+                delete.remove(swapped)      
     # Add CorrectProtocol to Bob
     subprotocol = CorrectProtocol(nodes[-1], len(nodes))
     protocol.add_subprotocol(subprotocol)
@@ -456,7 +461,7 @@ def setup_datacollector(network, protocol):
     return dc
 
 
-def run_simulation(num_nodes=25, node_distance=10, num_iters=100):
+def run_simulation(num_nodes=9, node_distance=10, num_iters=100):
     """Run the simulation experiment and return the collected data.
 
     Parameters
@@ -474,7 +479,6 @@ def run_simulation(num_nodes=25, node_distance=10, num_iters=100):
         Dataframe with recorded fidelity data.
 
     """
-    print(num_nodes)
     ns.sim_reset()
     est_runtime = (0.5 + num_nodes - 1) * node_distance * 5e3
     network = setup_network(num_nodes, node_distance=node_distance,
@@ -498,7 +502,7 @@ def create_plot(num_iters=2000):
     """
     from matplotlib import pyplot as plt
     fig, ax = plt.subplots()
-    for distance in [10,20, 50, 100]:
+    for distance in [10,20, 50]:
         data = pandas.DataFrame()
         for num_node in range(3, 20):
             data[num_node] = run_simulation(num_nodes=num_node,
