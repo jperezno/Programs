@@ -417,10 +417,8 @@ def setup_repeater_protocol(network):
                 protocol.add_subprotocol(subprotocol)
                 swapped_nodes.append(nodes_copy[i]) #stores in the empty list
                 #nodes_copy.pop[i] #this might work?
-        delete= [elem for elem in nodes_copy]
         for swapped in swapped_nodes:
-            if swapped in nodes_copy:
-                delete.remove(swapped)      
+                nodes_copy.remove(swapped)      
     # Add CorrectProtocol to Bob
     subprotocol = CorrectProtocol(nodes[-1], len(nodes))
     protocol.add_subprotocol(subprotocol)
