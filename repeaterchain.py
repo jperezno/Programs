@@ -459,7 +459,7 @@ def setup_datacollector(network, protocol):
     return dc
 
 
-def run_simulation(num_nodes=9, node_distance=10, num_iters=100):
+def run_simulation(num_nodes=9, node_distance=20, num_iters=100):
     """Run the simulation experiment and return the collected data.
 
     Parameters
@@ -500,9 +500,11 @@ def create_plot(num_iters=2000):
     """
     from matplotlib import pyplot as plt
     fig, ax = plt.subplots()
-    for distance in [10,20, 50]:
+    for distance in [10,20,50]:
         data = pandas.DataFrame()
-        for num_node in range(3, 20):
+        nesting_levels=list(range(1,5))
+        num_nodes = [int(2**nesting_level+1) for nesting_level in nesting_levels]
+        for num_node in num_nodes:
             data[num_node] = run_simulation(num_nodes=num_node,
                                             node_distance=distance / num_node,
                                             num_iters=num_iters)['fidelity']
