@@ -421,8 +421,8 @@ def setup_repeater_protocol(network):
     # Add CorrectProtocol to Bob
     subprotocol = CorrectProtocol(nodes[-1], len(nodes))
     protocol.add_subprotocol(subprotocol)
-    print(ns.sim_time())
-    ns.sim_stop()
+    #print(ns.sim_time())
+    #ns.sim_stop()
     return protocol
 
 
@@ -451,8 +451,9 @@ def setup_datacollector(network, protocol):
         qubit_a, = nodes[0].qmemory.peek([0])
         qubit_b, = nodes[-1].qmemory.peek([1])
         fidelity = ns.qubits.fidelity([qubit_a, qubit_b], ks.b00, squared=True)
-        print(fidelity)
-        return {"fidelity": fidelity}
+        time=ns.sim_time()
+        print("f",fidelity,"time=",time)
+        return {"fidelity": fidelity,"time":time}
 
     dc = DataCollector(calc_fidelity, include_entity_name=False)
     dc.collect_on(pydynaa.EventExpression(source=protocol.subprotocols['CorrectProtocol'],
