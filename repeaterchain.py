@@ -416,12 +416,13 @@ def setup_repeater_protocol(network):
                 subprotocol = SwapProtocol(node=nodes_copy[i], name=f"Swap_{nodes_copy[i].name}") #swap protocol
                 protocol.add_subprotocol(subprotocol)
                 swapped_nodes.append(nodes_copy[i]) #stores in the empty list
-                #nodes_copy.pop[i] #this might work?
         for swapped in swapped_nodes:
                 nodes_copy.remove(swapped)      
     # Add CorrectProtocol to Bob
     subprotocol = CorrectProtocol(nodes[-1], len(nodes))
     protocol.add_subprotocol(subprotocol)
+    print(ns.sim_time())
+    ns.sim_stop()
     return protocol
 
 
@@ -478,7 +479,9 @@ def run_simulation(num_nodes=9, node_distance=20, num_iters=100):
 
     """
     ns.sim_reset()
+    print("number of nodes=",num_nodes)
     est_runtime = (0.5 + num_nodes - 1) * node_distance * 5e3
+    #event 
     network = setup_network(num_nodes, node_distance=node_distance,
                             source_frequency=1e9 / est_runtime)
     protocol = setup_repeater_protocol(network)
