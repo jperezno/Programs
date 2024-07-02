@@ -1,6 +1,123 @@
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# 
+# File: purify.py
+# 
+# This file is part of the NetSquid package (https://netsquid.org).
+# It is subject to the NetSquid Software End User License Conditions.
+# A copy of these conditions can be found in the LICENSE.md file of this package.
+# 
+# NetSquid Authors
+# ================
+# 
+# NetSquid is being developed within [Quantum Internet division](https://qutech.nl/research-engineering/quantum-internet/) at QuTech.
+# QuTech is a collaboration between TNO and the TUDelft.
+# 
+# Active authors (alphabetical):
+# 
+# - Tim Coopmans (scientific contributor)
+# - Chris Elenbaas (software developer)
+# - David Elkouss (scientific supervisor)
+# - Rob Knegjens (tech lead, software architect)
+# - Iñaki Martin Soroa (software developer)
+# - Julio de Oliveira Filho (software architect)
+# - Ariana Torres Knoop (HPC contributor)
+# - Stephanie Wehner (scientific supervisor)
+# 
+# Past authors (alphabetical):
+# 
+# - Axel Dahlberg (scientific contributor)
+# - Damian Podareanu (HPC contributor)
+# - Walter de Jong (HPC contributor)
+# - Loek Nijsten (software developer)
+# - Martijn Papendrecht (software developer)
+# - Filip Rozpedek (scientific contributor)
+# - Matt Skrzypczyk (software contributor)
+# - Leon Wubben (software developer)
+# 
+# The simulation engine of NetSquid depends on the pyDynAA package,
+# which is developed at TNO by Julio de Oliveira Filho, Rob Knegjens, Coen van Leeuwen, and Joost Adriaanse.
+# 
+# Ariana Torres Knoop, Walter de Jong and Damian Podareanu from SURFsara have contributed towards the optimization and parallelization of NetSquid.
+# 
+# Hana Jirovska and Chris Elenbaas have built Python packages for MacOS.
+# 
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# This file uses NumPy style docstrings: https://github.com/numpy/numpy/blob/master/doc/HOWTO_DOCUMENT.rst.txt
+
+"""Purification protocols are means to improve the fidelity of an already established entangled link.
+
+The python file of this module contains example protocols for entanglement purification using filtering and distillation.
+In the example below we will focus on filtering.
+
+.. literalinclude:: ../../netsquid/examples/purify.py
+    :pyobject: Filter
+    :end-before: Parameters
+    :append: ... <remaining code omitted>
+
+The :class:`~netsquid.examples.purify.Filter` protocol and the :class:`~netsquid.examples.entanglenodes.EntangleNodes`
+protocol are combined as sub-protocols in the `FilteringExample` protocol:
+
+.. literalinclude:: ../../netsquid/examples/purify.py
+    :pyobject: FilteringExample
+    :end-before: Parameters
+    :append: ... <remaining code omitted>
+
+To be able to send classical messages back and forth between the nodes, we need to extend our network with a connection,
+as can be seen in the :func:`~netsquid.examples.purify.example_network_setup()` function:
+
+
+.. literalinclude:: ../../netsquid/examples/purify.py
+    :pyobject: example_network_setup
+
+
+Resulting in the following network:
+
+.. aafig::
+    :proportional:
+
+    +---------------------+                                        +---------------------+
+    |                     | +------------------------------------+ |                     |
+    | "NodeA:"            | |                                    | | "NodeB:"            |
+    | "QSource"           O-* "Connection: QuantumChannel -->"   *-O "QuantumProcessor"  |
+    | "QuantumProcessor"  | |                                    | |                     |
+    |                     | +------------------------------------+ |                     |
+    |                     |                                        |                     |
+    |                     | +------------------------------------+ |                     |
+    |                     | |                                    | |                     |
+    |                     O-* "Connection: ClassicalChannels <->"*-O                     |
+    |                     | |                                    | |                     |
+    |                     | +------------------------------------+ |                     |
+    +---------------------+                                        +---------------------+
+
+
+To collect data after each successful purification we add a :class:`~netsquid.util.datacollector.DataCollector` to our simulation:
+
+.. literalinclude:: ../../netsquid/examples/purify.py
+    :pyobject: example_sim_setup
+
+Putting it all together you can run an example simulation like this:
+
+>>> import netsquid as ns
+>>> print("This example module is located at: {}".format(ns.examples.purify.__file__))
+This example module is located at: .../netsquid/examples/purify.py
+>>> from netsquid.examples.purify import example_network_setup, example_sim_setup
+>>> network = example_network_setup()
+>>> filt_example, dc = example_sim_setup(
+...     network.get_node("node_A"), network.get_node("node_B"), num_runs=1000)
+>>> filt_example.start()
+>>> ns.sim_run()
+>>> print("Average fidelity of generated entanglement with filtering: {}"
+...       .format(dc.dataframe["F2"].mean()))
+Average fidelity of generated entanglement with filtering: ...
+
+.. W. Dur, H. J. Briegel, "Entanglement purification and quantum error
+   correction", arXiv: 0705.4165
+
+"""
 import numpy as np
 import netsquid as ns
 import pydynaa as pd
+
 from netsquid.components import ClassicalChannel, QuantumChannel
 from netsquid.util.simtools import sim_time
 from netsquid.util.datacollector import DataCollector
@@ -294,7 +411,7 @@ class Distil(NodeProtocol):
             self.local_qcount += 1
             self.local_meas_result = None
             self._waiting_on_second_qubit = True
-###########
+
     def _node_do_DEJMPS(self):
         # Perform DEJMPS distillation protocol locally on one node
         pos1, pos2 = self._qmem_positions
@@ -390,9 +507,10 @@ class FilteringExample(LocalProtocol):
         self.add_subprotocol(
             EntangleNodes(node=node_b, role="receiver", input_mem_pos=0, num_pairs=1,
                           name="entangle_B"))
-        self.add_subprotocol(Filter(node_a, node_a.get_conn_port(node_b.ID),
+        ##port with name conn1 changed naming of ports
+        self.add_subprotocol(Filter(node_a, node_a.ports["ccon_R"],
                                     epsilon=epsilon, name="purify_A"))
-        self.add_subprotocol(Filter(node_b, node_b.get_conn_port(node_a.ID),
+        self.add_subprotocol(Filter(node_b, node_b.ports["ccon_L"],
                                     epsilon=epsilon, name="purify_B"))
         # Set start expressions
         self.subprotocols["purify_A"].start_expression = (
@@ -480,8 +598,7 @@ def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate
     # Link Bob ports:
     node_b.ports[port_name_b].forward_input(node_b.qmemory.ports["qin0"])
     return network
-
-
+######take a look
 def example_sim_setup(node_a, node_b, num_runs, epsilon=0.3):
     """Example simulation setup for purification protocols.
 
@@ -510,6 +627,7 @@ def example_sim_setup(node_a, node_b, num_runs, epsilon=0.3):
     dc.collect_on(pd.EventExpression(source=filt_example,
                                      event_type=Signals.SUCCESS.value))
     return filt_example, dc
+
 
 
 if __name__ == "__main__":

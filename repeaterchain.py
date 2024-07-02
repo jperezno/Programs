@@ -194,6 +194,8 @@ from netsquid.nodes import Node, Network
 from netsquid.protocols import LocalProtocol, NodeProtocol, Signals
 from netsquid.util.datacollector import DataCollector
 from netsquid.examples.teleportation import EntanglingConnection, ClassicalConnection
+from netsquid.qubits import qubitapi as qapi
+from purification import *
 __all__ = [
     "SwapProtocol",
     "SwapCorrectProgram",
@@ -298,7 +300,7 @@ class CorrectProtocol(NodeProtocol):
                 self._counter = 0
 
 
-def create_qprocessor(name):
+def create_qprocessor(name,links):
     """Factory to create a quantum processor for each node in the repeater chain network.
 
     Has two memory positions and the physical instructions necessary for teleportation.
@@ -325,13 +327,13 @@ def create_qprocessor(name):
                             quantum_noise_model=gate_noise_model),
         PhysicalInstruction(INSTR_MEASURE_BELL, duration=gate_duration),
     ]
-    qproc = QuantumProcessor(name, num_positions=2, fallback_to_nonphysical=False,
-                             mem_noise_models=[mem_noise_model] * 2,
+    qproc = QuantumProcessor(name, num_positions=2**(links+1), fallback_to_nonphysical=False,
+                             mem_noise_models=[mem_noise_model] * (2 **(links+1)), #this defines the number of quantum memory
                              phys_instructions=physical_instructions)
     return qproc
 
 
-
+#aqui buscar donde llaman quantum memory y agregar nueva variable links!!!!!!!!!!
 
 def setup_network(num_nodes, node_distance, source_frequency):
     """Setup repeater chain network.
@@ -356,10 +358,14 @@ def setup_network(num_nodes, node_distance, source_frequency):
     network = Network("Repeater_chain_network")
     # Create nodes with quantum processors
     nodes = []
+    nestlvl=int(np.log2(num_nodes))
+    #for zero links we have the orginal program
+    #####AQUI###
+    #links=0 
     for i in range(num_nodes):
         # Prepend leading zeros to the number
         num_zeros = 10
-        nodes.append(Node(f"Node_{i:0{num_zeros}d}", qmemory=create_qprocessor(f"qproc_{i}")))
+        nodes.append(Node(f"Node_{i:0{num_zeros}d}", qmemory=create_qprocessor(f"qproc_{i}", nestlvl)))
     network.add_nodes(nodes)
     # Create quantum and classical connections:
     for i in range(num_nodes - 1):
@@ -374,11 +380,13 @@ def setup_network(num_nodes, node_distance, source_frequency):
                 FibreDepolarizeModel()
         port_name, port_r_name = network.add_connection(
             node, node_right, connection=qconn, label="quantum")
+        print('portnames=',port_name,"b",port_r_name)
         # Forward qconn directly to quantum memories for right and left inputs:
         node.ports[port_name].forward_input(node.qmemory.ports["qin0"])  # R input
         node_right.ports[port_r_name].forward_input(
             node_right.qmemory.ports["qin1"])  # L input
         # Create classical connection
+        #############################
         cconn = ClassicalConnection(name=f"cconn_{i}-{i+1}", length=node_distance)
         port_name, port_r_name = network.add_connection(
             node, node_right, connection=cconn, label="classical",
@@ -399,7 +407,7 @@ def setup_repeater_protocol(network):
         Repeater chain network to put protocols on.
 
     Returns
-    -------
+    --------
     :class:`~netsquid.protocols.protocol.Protocol`
         Protocol holding all subprotocols used in the network.
 
@@ -409,14 +417,28 @@ def setup_repeater_protocol(network):
     # since the subprotocols would otherwise overwrite each other in the main protocol.
     nodes = [network.nodes[name] for name in sorted(network.nodes.keys())]
     nodes_copy=nodes.copy() #a copy of the original nodes
+    nest_lvl=int(np.log2(len(nodes)))
     while len(nodes_copy)>2: #instructions until nodes is only two
-        swapped_nodes=[]
+        deleted_nodes=[]
         for i in range(len(nodes_copy)):
             if (i % 2)==1:
                 subprotocol = SwapProtocol(node=nodes_copy[i], name=f"Swap_{nodes_copy[i].name}") #swap protocol
                 protocol.add_subprotocol(subprotocol)
-                swapped_nodes.append(nodes_copy[i]) #stores in the empty list
-        for swapped in swapped_nodes:
+                deleted_nodes.append(nodes_copy[i]) #stores in the empty list
+                node_a=nodes_copy[i]
+                node_b=nodes_copy[i+1]
+                #link=swapped_nodes
+                filt_example = FilteringExample(node_a, node_b, num_runs=100, epsilon=0.3)
+                protocol.add_subprotocol(filt_example)
+                #network = setup_network(num_nodes=nodes,node_distance=20,source_frequency=0.1)
+                #se, dc = Distil(node_a,node_b, num_runs=1)
+                #se.start()
+#we can take i a and i+1 as nodes and implement with them
+#by swapping we are creating a link (so here multiple links are being generated)
+######multilple links are being generated in the protocol, each nestlvl we need to purify once
+#we have network, links and ports
+###### after distillation we need to corroborate is working
+        for swapped in deleted_nodes:
                 nodes_copy.remove(swapped)      
     # Add CorrectProtocol to Bob
     subprotocol = CorrectProtocol(nodes[-1], len(nodes))
@@ -425,7 +447,7 @@ def setup_repeater_protocol(network):
     #ns.sim_stop()
     return protocol
 
-
+#in data collector we have changed the time
 def setup_datacollector(network, protocol):
     """Setup the datacollector to calculate the fidelity
     when the CorrectionProtocol has finished.
@@ -458,6 +480,7 @@ def setup_datacollector(network, protocol):
     dc = DataCollector(calc_fidelity, include_entity_name=False)
     dc.collect_on(pydynaa.EventExpression(source=protocol.subprotocols['CorrectProtocol'],
                                           event_type=Signals.SUCCESS.value))
+    pydynaa.SimulationEngine()
     return dc
 
 
@@ -504,10 +527,11 @@ def create_plot(num_iters=2000):
     """
     from matplotlib import pyplot as plt
     fig, ax = plt.subplots()
-    for distance in [10,20,50]:
+    for distance in [10,30,50]:
         data = pandas.DataFrame()
         nesting_levels=list(range(1,5))
         num_nodes = [int(2**nesting_level+1) for nesting_level in nesting_levels]
+        print ("actual nodes=",num_nodes)
         for num_node in num_nodes:
             data[num_node] = run_simulation(num_nodes=num_node,
                                             node_distance=distance / num_node,
