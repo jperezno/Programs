@@ -195,6 +195,7 @@ from netsquid.protocols import LocalProtocol, NodeProtocol, Signals
 from netsquid.util.datacollector import DataCollector
 from netsquid.examples.teleportation import EntanglingConnection, ClassicalConnection
 from netsquid.qubits import qubitapi as qapi
+from netsquid.examples.entanglenodes import *
 from purification import *
 __all__ = [
     "SwapProtocol",
@@ -380,6 +381,7 @@ def setup_network(num_nodes, node_distance, source_frequency):
                 FibreDepolarizeModel()
         port_name, port_r_name = network.add_connection(
             node, node_right, connection=qconn, label="quantum")
+        #this is extra# 
         print('portnames=',port_name,"b",port_r_name)
         # Forward qconn directly to quantum memories for right and left inputs:
         node.ports[port_name].forward_input(node.qmemory.ports["qin0"])  # R input
@@ -417,18 +419,42 @@ def setup_repeater_protocol(network):
     # since the subprotocols would otherwise overwrite each other in the main protocol.
     nodes = [network.nodes[name] for name in sorted(network.nodes.keys())]
     nodes_copy=nodes.copy() #a copy of the original nodes
-    nest_lvl=int(np.log2(len(nodes)))
+    num_nest_lvl=int(np.log2(len(nodes)))
+    nest_lvl=-1
     while len(nodes_copy)>2: #instructions until nodes is only two
+        nest_lvl=nest_lvl+1
         deleted_nodes=[]
         for i in range(len(nodes_copy)):
             if (i % 2)==1:
                 subprotocol = SwapProtocol(node=nodes_copy[i], name=f"Swap_{nodes_copy[i].name}") #swap protocol
                 protocol.add_subprotocol(subprotocol)
-                deleted_nodes.append(nodes_copy[i]) #stores in the empty list
-                node_a=nodes_copy[i]
+                node_a=nodes_copy[i-1]
                 node_b=nodes_copy[i+1]
+######################### length & sourcefreq added as int
+#add qconn
+                j=(i-1)*(2**nest_lvl)
+                j1=(i+1)*(2**nest_lvl)
+                qconn = EntanglingConnection(name=f"qconn_{j}-{j1}", length=10,source_frequency=10)
+                for channel_name in ['qchannel_C2A', 'qchannel_C2B']:
+                    qconn.subcomponents[channel_name].models['quantum_noise_model'] =\
+                        FibreDepolarizeModel()
+                    port_name, port_r_name = network.add_connection(node_a, node_b, connection=qconn, label="quantum")
+    # Forward qconn directly to quantum memories for right and left inputs:
+                node_a.ports[port_name].forward_input(node_a.qmemory.ports["qin0"])  # R input
+                node_b.ports[port_r_name].forward_input(
+                node_b.qmemory.ports["qin1"])  # L input
+#add classical
+                cconn = ClassicalConnection(name=f"cconn_{j}-{j1}", length=10)
+                port_name, port_r_name = network.add_connection(node_a, node_b, connection=cconn, label="classical",
+                port_name_node1=f"ccon_R{nest_lvl}", port_name_node2=f"ccon_L{nest_lvl}")
+        #Forward cconn to right most node
+                if f"ccon_L{nest_lvl}" in node_a.ports:
+                    node_a.ports[f"ccon_L{nest_lvl}"].bind_input_handler(lambda message, _node=node_a: _node.ports[f"ccon_R{nest_lvl}"].tx_output(message))
+#########################
+                deleted_nodes.append(nodes_copy[i]) #stores in the empty list
                 #link=swapped_nodes
                 filt_example = FilteringExample(node_a, node_b, num_runs=100, epsilon=0.3)
+                filt_example.run
                 protocol.add_subprotocol(filt_example)
                 #network = setup_network(num_nodes=nodes,node_distance=20,source_frequency=0.1)
                 #se, dc = Distil(node_a,node_b, num_runs=1)
@@ -437,9 +463,12 @@ def setup_repeater_protocol(network):
 #by swapping we are creating a link (so here multiple links are being generated)
 ######multilple links are being generated in the protocol, each nestlvl we need to purify once
 #we have network, links and ports
+#try to use distil only 
+#check two way comm
 ###### after distillation we need to corroborate is working
         for swapped in deleted_nodes:
                 nodes_copy.remove(swapped)      
+    
     # Add CorrectProtocol to Bob
     subprotocol = CorrectProtocol(nodes[-1], len(nodes))
     protocol.add_subprotocol(subprotocol)
