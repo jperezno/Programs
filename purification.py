@@ -502,12 +502,8 @@ class FilteringExample(LocalProtocol):
         self._epsilon = epsilon
         self.num_runs = num_runs
         # Initialise sub-protocols
-        self.add_subprotocol(EntangleNodes(node=node_a, role="source", input_mem_pos=0,
-                                           num_pairs=1, name="entangle_A"))
-        self.add_subprotocol(
-            EntangleNodes(node=node_b, role="receiver", input_mem_pos=0, num_pairs=1,
-                          name="entangle_B"))
-        ##port with name conn1 changed naming of ports
+        #entanglment btwn A&B happens in purify.py
+###        ##port with name conn1 changed naming of ports
         self.add_subprotocol(Filter(node_a, node_a.ports["ccon_R"],
                                     epsilon=epsilon, name="purify_A"))
         self.add_subprotocol(Filter(node_b, node_b.ports["ccon_L"],
