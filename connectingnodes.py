@@ -507,7 +507,6 @@ class FilteringExample(LocalProtocol):
         self.add_subprotocol(
             EntangleNodes(node=node_b, role="receiver", input_mem_pos=0, num_pairs=1,
                           name="entangle_B"))
-        ##port with name conn1
         self.add_subprotocol(Filter(node_a, node_a.get_conn_port(node_b.ID),
                                     epsilon=epsilon, name="purify_A"))
         self.add_subprotocol(Filter(node_b, node_b.get_conn_port(node_a.ID),
@@ -561,7 +560,6 @@ def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate
 
     """
     network = Network("purify_network")
-
     node_a, node_b, node_c = network.add_nodes(["node_A", "node_B", "node_C"])
     #setupA
     node_a.add_subcomponent(QuantumProcessor(
@@ -573,7 +571,7 @@ def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate
     node_a.add_subcomponent(QSource(
         "QSource_A", state_sampler=state_sampler,
         models={"emission_delay_model": FixedDelayModel(delay=source_delay)},
-        num_ports=1, status=SourceStatus.EXTERNAL))
+        num_ports=2, status=SourceStatus.EXTERNAL))
     #setupB (intermidiate)
     node_b.add_subcomponent(QuantumProcessor(
         "QuantumMemory_B", num_positions=4, fallback_to_nonphysical=True,
@@ -588,7 +586,7 @@ def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate
     node_c.add_subcomponent(QSource(
         "QSource_C", state_sampler=state_sampler,
         models={"emission_delay_model": FixedDelayModel(delay=source_delay)},
-        num_ports=1, status=SourceStatus.EXTERNAL))
+        num_ports=2, status=SourceStatus.EXTERNAL))
     #classical connections
     conn_cchannelAB = DirectConnection(
         "CChannelConn_AB",
@@ -597,13 +595,13 @@ def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate
         ClassicalChannel("CChannel_B->A", length=node_distance,
                          models={"delay_model": FibreDelayModel(c=200e3)}))
     network.add_connection(node_a, node_b, connection=conn_cchannelAB)
-    conn_cchannelBC= DirectConnection(
-        "CChannelConn_BC",
-        ClassicalChannel("CChannel_B->C", length=node_distance,
-                         models={"delay_model": FibreDelayModel(c=200e3)}),
+    conn_cchannelCB= DirectConnection(
+        "CChannelConn_CB",
         ClassicalChannel("CChannel_C->B", length=node_distance,
+                         models={"delay_model": FibreDelayModel(c=200e3)}),
+        ClassicalChannel("CChannel_B->C", length=node_distance,
                          models={"delay_model": FibreDelayModel(c=200e3)}))
-    network.add_connection(node_c, node_b, connection=conn_cchannelBC)
+    network.add_connection(node_c, node_b, connection=conn_cchannelCB)
     # node_A.connect_to(node_B, conn_cchannel)
     #Quantum connections
     #left from B
