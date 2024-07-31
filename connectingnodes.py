@@ -78,7 +78,7 @@ Resulting in the following network:
     +---------------------+                                        +---------------------+
     |                     | +------------------------------------+ |                     |
     | "NodeA:"            | |                                    | | "NodeB:"            |
-    | "QSource"           O-* "Connection: QuantumChannelAB -->"   *-OL "QuantumProcessor"R  |- Quantum Channel - O SOurce
+    | "QSource"           O-* "Connection: QuantumChannelAB -->"   *-OL "QuantumProcessor"R  |- Quantum Channel-| O SOurce
     | "QuantumProcessor"  | |                                    | |                     | 
     |                     | +------------------------------------+ |                     |
     |                     |                                        |                     |                      |
@@ -293,7 +293,7 @@ class Filter(NodeProtocol):
             return False
         return True
 
-
+#In distill nothing as been changed
 class Distil(NodeProtocol):
     """Protocol that does local DEJMPS distillation on a node.
 
@@ -454,6 +454,7 @@ class Distil(NodeProtocol):
         return True
 
 
+#In filtering example, two more nodes have been added to be able to entangle node A and C (this nodes are B_left and B_right respectively) 
 class FilteringExample(LocalProtocol):
     r"""Protocol for a complete filtering experiment.
 
@@ -496,51 +497,89 @@ class FilteringExample(LocalProtocol):
         The filter purification does not support the stabilizer formalism.
 
     """
-
-    def __init__(self, node_a, node_b, num_runs, epsilon=0.3):
-        super().__init__(nodes={"A": node_a, "B": node_b}, name="Filtering example")
+    #In here (init) the new variable node_c has been added
+    def __init__(self, node_a, node_b, node_c, num_runs, epsilon=0.3):
+        super().__init__(nodes={"A": node_a, "B": node_b, "C": node_c}, name="Filtering example")
         self._epsilon = epsilon
         self.num_runs = num_runs
-        # Initialise sub-protocols
+        # Initialise sub-protocols (variable links added) in this part, we're entangling node A and C as qubit sources and node B as reciever for both
+        links=2
         self.add_subprotocol(EntangleNodes(node=node_a, role="source", input_mem_pos=0,
-                                           num_pairs=1, name="entangle_A"))
-        self.add_subprotocol(
-            EntangleNodes(node=node_b, role="receiver", input_mem_pos=0, num_pairs=1,
-                          name="entangle_B"))
+                                           num_pairs=links, name="entangle_A"))
+        self.add_subprotocol(EntangleNodes(node=node_c, role="source", input_mem_pos=0,
+                                           num_pairs=links, name="entangle_C"))
+        self.add_subprotocol(EntangleNodes(node=node_b, role="receiver", input_mem_pos=0, num_pairs=links,
+                          name="entangle_B_left"))
+        self.add_subprotocol(EntangleNodes(node=node_b, role="receiver", input_mem_pos=1, num_pairs=links,
+                          name="entangle_B_right"))
+        #adding subprotocols to do purification in said node
+        #here we will purify node A-B
         self.add_subprotocol(Filter(node_a, node_a.get_conn_port(node_b.ID),
                                     epsilon=epsilon, name="purify_A"))
         self.add_subprotocol(Filter(node_b, node_b.get_conn_port(node_a.ID),
-                                    epsilon=epsilon, name="purify_B"))
-        # Set start expressions
+                                    epsilon=epsilon, name="purify_B_left"))
+        #here we will purify node C-B
+        self.add_subprotocol(Filter(node_c, node_c.get_conn_port(node_b.ID),
+                                    epsilon=epsilon, name="purify_C"))
+        self.add_subprotocol(Filter(node_b, node_b.get_conn_port(node_c.ID),
+                                    epsilon=epsilon, name="purify_B_right"))
+        # Set start expression, purify after entanglement is success for all entangling connections
         self.subprotocols["purify_A"].start_expression = (
             self.subprotocols["purify_A"].await_signal(self.subprotocols["entangle_A"],
                                                        Signals.SUCCESS))
-        self.subprotocols["purify_B"].start_expression = (
-            self.subprotocols["purify_B"].await_signal(self.subprotocols["entangle_B"],
+        self.subprotocols["purify_B_left"].start_expression = (
+            self.subprotocols["purify_B_left"].await_signal(self.subprotocols["entangle_B_left"],
                                                        Signals.SUCCESS))
+        self.subprotocols["purify_B_right"].start_expression = (        
+            self.subprotocols["purify_B_right"].await_signal(self.subprotocols["entangle_B_right"],
+                                                       Signals.SUCCESS))
+        self.subprotocols["purify_C"].start_expression = (
+            self.subprotocols["purify_C"].await_signal(self.subprotocols["entangle_C"],
+                                                       Signals.SUCCESS))
+        #expressions for when entangling fails?? not sure
         start_expr_ent_A = (self.subprotocols["entangle_A"].await_signal(
                             self.subprotocols["purify_A"], Signals.FAIL) |
                             self.subprotocols["entangle_A"].await_signal(
                                 self, Signals.WAITING))
+        
+        start_expr_ent_C = (self.subprotocols["entangle_C"].await_signal(
+                            self.subprotocols["purify_C"], Signals.FAIL) |
+                            self.subprotocols["entangle_C"].await_signal(
+                                self, Signals.WAITING))
         self.subprotocols["entangle_A"].start_expression = start_expr_ent_A
+        self.subprotocols["entangle_C"].start_expression = start_expr_ent_C
 
+#In run the subprotocols entangle Bleft and Bright are added and set to zero to restart everything
     def run(self):
         self.start_subprotocols()
         for i in range(self.num_runs):
             start_time = sim_time()
             self.subprotocols["entangle_A"].entangled_pairs = 0
+            self.subprotocols["entangle_B_left"].entangled_pairs = 0
+            self.subprotocols["entangle_C"].entangled_pairs = 0
+            self.subprotocols["entangle_B_right"].entangled_pairs = 0
             self.send_signal(Signals.WAITING)
+            #original program has only one yield statement, which only returns the result of the purification and stores in in signals
+            #here modified the orginal yield to connect A-B and added a new yield statement for the purification of C-B
             yield (self.await_signal(self.subprotocols["purify_A"], Signals.SUCCESS) &
-                   self.await_signal(self.subprotocols["purify_B"], Signals.SUCCESS))
-            signal_A = self.subprotocols["purify_A"].get_signal_result(Signals.SUCCESS,
-                                                                       self)
-            signal_B = self.subprotocols["purify_B"].get_signal_result(Signals.SUCCESS,
-                                                                       self)
+                   self.await_signal(self.subprotocols["purify_B_left"], Signals.SUCCESS))
+            signal_A = self.subprotocols["purify_A"].get_signal_result(Signals.SUCCESS,self)
+            signal_B_left = self.subprotocols["purify_B_left"].get_signal_result(Signals.SUCCESS,self)
+            yield (self.await_signal(self.subprotocols["purify_C"], Signals.SUCCESS) &
+                   self.await_signal(self.subprotocols["purify_B_right"], Signals.SUCCESS))
+            signal_C = self.subprotocols["purify_C"].get_signal_result(Signals.SUCCESS,self)
+            signal_B_right = self.subprotocols["purify_B_right"].get_signal_result(Signals.SUCCESS,self)
+            #in result added the results of the prior part
             result = {
                 "pos_A": signal_A,
-                "pos_B": signal_B,
+                "pos_B_left": signal_B_left,
+                "pos_B_right": signal_B_right,
+                "pos_C": signal_C,
                 "time": sim_time() - start_time,
-                "pairs": self.subprotocols["entangle_A"].entangled_pairs,
+                "pairs_A": self.subprotocols["entangle_A"].entangled_pairs,
+                "pairs_B_left": self.subprotocols["entangle_B_left"].entangled_pairs,
+                "pairs_B_right": self.subprotocols["entangle_B_right"].entangled_pairs,
+                "pairs_C": self.subprotocols["entangle_C"].entangled_pairs,
             }
             self.send_signal(Signals.SUCCESS, result)
 
@@ -559,9 +598,10 @@ def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate
         This network is also used by the matching integration test.
 
     """
+    #here we added the new node_C
     network = Network("purify_network")
     node_a, node_b, node_c = network.add_nodes(["node_A", "node_B", "node_C"])
-    #setupA
+    #setupA components which are Quantum processor and QuantumSource
     node_a.add_subcomponent(QuantumProcessor(
         "QuantumMemory_A", num_positions=2, fallback_to_nonphysical=True,
         memory_noise_models=DepolarNoiseModel(depolar_rate)))
@@ -572,11 +612,11 @@ def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate
         "QSource_A", state_sampler=state_sampler,
         models={"emission_delay_model": FixedDelayModel(delay=source_delay)},
         num_ports=2, status=SourceStatus.EXTERNAL))
-    #setupB (intermidiate)
+    #setupB (intermediate) here we add the quantum processor for b which has access to 4 memory slots
     node_b.add_subcomponent(QuantumProcessor(
         "QuantumMemory_B", num_positions=4, fallback_to_nonphysical=True,
         memory_noise_models=DepolarNoiseModel(depolar_rate)))
-    #setupC
+    #setupC same for A soruce and memory
     node_c.add_subcomponent(QuantumProcessor(
         "QuantumMemory_C", num_positions=2, fallback_to_nonphysical=True,
         memory_noise_models=DepolarNoiseModel(depolar_rate)))
@@ -588,6 +628,7 @@ def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate
         models={"emission_delay_model": FixedDelayModel(delay=source_delay)},
         num_ports=2, status=SourceStatus.EXTERNAL))
     #classical connections
+    #here we add the classical connections between AB and BC and we save them with their specific names
     conn_cchannelAB = DirectConnection(
         "CChannelConn_AB",
         ClassicalChannel("CChannel_A->B", length=node_distance,
@@ -603,7 +644,7 @@ def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate
                          models={"delay_model": FibreDelayModel(c=200e3)}))
     network.add_connection(node_c, node_b, connection=conn_cchannelCB)
     # node_A.connect_to(node_B, conn_cchannel)
-    #Quantum connections
+    #Here we set up the Quantum connections and we save the ports with their respective names
     #left from B
     qchannelAB = QuantumChannel("QChannel_A->B", length=node_distance,
                               models={"quantum_loss_model": None,
@@ -611,7 +652,7 @@ def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate
                               depolar_rate=0)
     port_name_a, port_name_b_left = network.add_connection(
         node_a, node_b, channel_to=qchannelAB, label="quantum")
-    #righr from B
+    #right from B
     qchannelBC = QuantumChannel("QChannel_B->C", length=node_distance,
                               models={"quantum_loss_model": None,
                                       "delay_model": FibreDelayModel(c=200e3)},
@@ -632,38 +673,10 @@ def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate
     # Link Bob ports:
     node_b.ports[port_name_b_left].forward_input(node_b.qmemory.ports["qin0"])
     node_b.ports[port_name_b_right].forward_input(node_b.qmemory.ports["qin1"])
-    return Network
-# #lets connect B and C here
-#     node_b.add_subcomponent(QuantumProcessor(
-#         "QuantumMemory_B", num_positions=2, fallback_to_nonphysical=True,
-#         memory_noise_models=DepolarNoiseModel(depolar_rate)))
-#     state_sampler = StateSampler(
-#         [ks.b01, ks.s00],
-#         probabilities=[source_fidelity_sq, 1 - source_fidelity_sq])
-#     node_b.add_subcomponent(QSource(
-#         "QSource_B", state_sampler=state_sampler,
-#         models={"emission_delay_model": FixedDelayModel(delay=source_delay)},
-#         num_ports=1, status=SourceStatus.EXTERNAL))
-#     node_c.add_subcomponent(QuantumProcessor(
-#         "QuantumMemory_C", num_positions=2, fallback_to_nonphysical=True,
-#         memory_noise_models=DepolarNoiseModel(depolar_rate)))
-#     #)
-#     qchannel = QuantumChannel("QChannel_B->C", length=node_distance,
-#                               models={"quantum_loss_model": None,
-#                                       "delay_model": FibreDelayModel(c=200e3)},
-#                               depolar_rate=0)
-#     port_name_b_right, port_name_c = network.add_connection(
-#         node_b, node_c, channel_to=qchannel, label="quantum")
-#     # Link Bob ports:
-#     node_b.subcomponents["QSource_B"].ports["qout1"].forward_output(
-#         node_b.ports[port_name_b_right])
-#     node_b.subcomponents["QSource_B"].ports["qout0"].connect(
-#         node_b.qmemory.ports["qin0"])
-#     # Link Charlie ports:
-#     node_c.ports[port_name_c].forward_input(node_b.qmemory.ports["qin0"])
-#     return network
+    return network
 ######take a look
-def example_sim_setup(node_a, node_b, num_runs, epsilon=0.3):
+#here the new node_c has been added and tried to call the data from datacollector 
+def example_sim_setup(node_a, node_b, node_c, num_runs, epsilon=0.3):
     """Example simulation setup for purification protocols.
 
     Returns
@@ -674,16 +687,16 @@ def example_sim_setup(node_a, node_b, num_runs, epsilon=0.3):
         Dataframe of collected data.
 
     """
-    filt_example = FilteringExample(node_a, node_b, num_runs=num_runs, epsilon=0.3)
+    filt_example = FilteringExample(node_a, node_b,node_c, num_runs=num_runs, epsilon=0.3)
 
     def record_run(evexpr):
         # Callback that collects data each run
         protocol = evexpr.triggered_events[-1].source
         result = protocol.get_signal_result(Signals.SUCCESS)
-        # Record fidelity
+        # Record fidelity (changed the name of q_C and the position that we call)
         q_A, = node_a.qmemory.pop(positions=[result["pos_A"]])
-        q_B, = node_b.qmemory.pop(positions=[result["pos_B"]])
-        f2 = qapi.fidelity([q_A, q_B], ks.b01, squared=True)
+        q_C, = node_b.qmemory.pop(positions=[result["pos_C"]])
+        f2 = qapi.fidelity([q_A, q_C], ks.b01, squared=True)
         return {"F2": f2, "pairs": result["pairs"], "time": result["time"]}
 
     dc = DataCollector(record_run, include_time_stamp=False,
@@ -696,8 +709,13 @@ def example_sim_setup(node_a, node_b, num_runs, epsilon=0.3):
 
 if __name__ == "__main__":
     network = example_network_setup()
+    print("elo world")
+    # node_temp = network.get_node('node_A')
+    #here added the new node C
+    print(network)
     filt_example, dc = example_sim_setup(network.get_node("node_A"),
                                          network.get_node("node_B"),
+                                         network.get_node("node_C"),
                                          num_runs=1000)
     filt_example.start()
     ns.sim_run()
