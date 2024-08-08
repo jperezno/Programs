@@ -514,6 +514,7 @@ class FilteringExample(LocalProtocol):
                           name="entangle_B_right"))
         #adding subprotocols to do purification in said node
         #here we will purify node A-B
+        print(node_b.ID)
         self.add_subprotocol(Filter(node_a, node_a.get_conn_port(node_b.ID),
                                     epsilon=epsilon, name="purify_A"))
         self.add_subprotocol(Filter(node_b, node_b.get_conn_port(node_a.ID),
@@ -536,17 +537,18 @@ class FilteringExample(LocalProtocol):
         self.subprotocols["purify_C"].start_expression = (
             self.subprotocols["purify_C"].await_signal(self.subprotocols["entangle_C"],
                                                        Signals.SUCCESS))
-        #expressions for when entangling fails?? not sure
+        #expressions for entangling
+        #this entangles A
         start_expr_ent_A = (self.subprotocols["entangle_A"].await_signal(
                             self.subprotocols["purify_A"], Signals.FAIL) |
                             self.subprotocols["entangle_A"].await_signal(
                                 self, Signals.WAITING))
-        
+        self.subprotocols["entangle_A"].start_expression = start_expr_ent_A
+        #this entangles C
         start_expr_ent_C = (self.subprotocols["entangle_C"].await_signal(
                             self.subprotocols["purify_C"], Signals.FAIL) |
                             self.subprotocols["entangle_C"].await_signal(
                                 self, Signals.WAITING))
-        self.subprotocols["entangle_A"].start_expression = start_expr_ent_A
         self.subprotocols["entangle_C"].start_expression = start_expr_ent_C
 
 #In run the subprotocols entangle Bleft and Bright are added and set to zero to restart everything
@@ -573,18 +575,21 @@ class FilteringExample(LocalProtocol):
             result = {
                 "pos_A": signal_A,
                 "pos_B_left": signal_B_left,
+
                 "pos_B_right": signal_B_right,
                 "pos_C": signal_C,
                 "time": sim_time() - start_time,
+
                 "pairs_A": self.subprotocols["entangle_A"].entangled_pairs,
                 "pairs_B_left": self.subprotocols["entangle_B_left"].entangled_pairs,
+
                 "pairs_B_right": self.subprotocols["entangle_B_right"].entangled_pairs,
                 "pairs_C": self.subprotocols["entangle_C"].entangled_pairs,
             }
             self.send_signal(Signals.SUCCESS, result)
 
 
-def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate=1000,
+def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate=100,
                           node_distance=20):
     """Create an example network for use with the purification protocols.
 
@@ -676,6 +681,7 @@ def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate
     return network
 ######take a look
 #here the new node_c has been added and tried to call the data from datacollector 
+#lets add f2 btwn a and b, then b and c
 def example_sim_setup(node_a, node_b, node_c, num_runs, epsilon=0.3):
     """Example simulation setup for purification protocols.
 
@@ -695,9 +701,12 @@ def example_sim_setup(node_a, node_b, node_c, num_runs, epsilon=0.3):
         result = protocol.get_signal_result(Signals.SUCCESS)
         # Record fidelity (changed the name of q_C and the position that we call)
         q_A, = node_a.qmemory.pop(positions=[result["pos_A"]])
-        q_C, = node_b.qmemory.pop(positions=[result["pos_C"]])
-        f2 = qapi.fidelity([q_A, q_C], ks.b01, squared=True)
-        return {"F2": f2, "pairs": result["pairs"], "time": result["time"]}
+        q_B_left, = node_b.qmemory.pop(positions=[result["pos_B_left"]])
+        q_C, = node_c.qmemory.pop(positions=[result["pos_A"]])
+        q_B_right, = node_b.qmemory.pop(positions=[result["pos_B_right"]])
+        f2 = qapi.fidelity([q_A, q_B_left], ks.b01, squared=True)
+        f3 = qapi.fidelity([q_C, q_B_right], ks.b01, squared=True)
+        return {"F2": f2, "F3":f3 ,"time": result["time"]}
 
     dc = DataCollector(record_run, include_time_stamp=False,
                        include_entity_name=False)
@@ -710,14 +719,15 @@ def example_sim_setup(node_a, node_b, node_c, num_runs, epsilon=0.3):
 if __name__ == "__main__":
     network = example_network_setup()
     print("elo world")
-    # node_temp = network.get_node('node_A')
+    #node_temp = network.get_node('node_A')
     #here added the new node C
-    print(network)
     filt_example, dc = example_sim_setup(network.get_node("node_A"),
                                          network.get_node("node_B"),
                                          network.get_node("node_C"),
                                          num_runs=1000)
     filt_example.start()
     ns.sim_run()
-    print("Average fidelity of generated entanglement with filtering: {}".format(
+    print("Average fidelity of generated entanglement with filtering between A and B: {}".format(
         dc.dataframe["F2"].mean()))
+    print("Average fidelity of generated entanglement with filtering between C and B: {}".format(
+        dc.dataframe["F3"].mean()))
