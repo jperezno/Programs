@@ -130,7 +130,7 @@ from netsquid.protocols.protocol import Signals
 from netsquid.nodes.node import Node
 from netsquid.nodes.network import Network
 from netsquid.examples.entanglenodes import EntangleNodes
-from netsquid.components.instructions import INSTR_MEASURE, INSTR_CNOT, IGate
+from netsquid.components.instructions import INSTR_MEASURE, INSTR_CNOT, IGate, INSTR_MEASURE_BELL, INSTR_X, INSTR_Z
 from netsquid.components.component import Message, Port
 from netsquid.components.qsource import QSource, SourceStatus
 from netsquid.components.qprocessor import QuantumProcessor
@@ -453,6 +453,73 @@ class Distil(NodeProtocol):
             return False
         return True
 
+class SwapProtocol(NodeProtocol):
+
+    def __init__(self, node, name):
+        super().__init__(node, name)
+        self._qmem_input_port_l = self.node.qmemory.ports["qin1"]
+        self._qmem_input_port_r = self.node.qmemory.ports["qin0"]
+        self._program = QuantumProgram(num_qubits=2)
+        q1, q2 = self._program.get_qubit_indices(num_qubits=2)
+        self._program.apply(INSTR_MEASURE_BELL, [q1, q2], output_key="m", inplace=False)
+
+    def run(self):
+        while True:
+            yield (self.await_port_input(self._qmem_input_port_l) &
+                   self.await_port_input(self._qmem_input_port_r))
+            # Perform Bell measurement
+            yield self.node.qmemory.execute_program(self._program, qubit_mapping=[1, 0])
+            m, = self._program.output["m"]
+            # Send result to right node on end
+            self.node.ports["ccon_R"].tx_output(Message(m))
+
+#this is how a quantum processor applies all swap corrections:
+class SwapCorrectProgram(QuantumProgram):
+    default_num_qubits = 1
+
+    def set_corrections(self, x_corr, z_corr):
+        self.x_corr = x_corr % 2
+        self.z_corr = z_corr % 2
+
+    def program(self):
+        q1, = self.get_qubit_indices(1)
+        if self.x_corr == 1:
+            self.apply(INSTR_X, q1)
+        if self.z_corr == 1:
+            self.apply(INSTR_Z, q1)
+        yield self.run()
+
+#This is how a protocol performs corrections for a swap on an end-node
+class CorrectProtocol(NodeProtocol):
+
+    def __init__(self, node, num_nodes):
+        super().__init__(node, "CorrectProtocol")
+        self.num_nodes = num_nodes
+        self._x_corr = 0
+        self._z_corr = 0
+        self._program = SwapCorrectProgram()
+        self._counter = 0
+
+    def run(self):
+        while True:
+            yield self.await_port_input(self.node.ports["ccon_L"])
+            message = self.node.ports["ccon_L"].rx_input()
+            if message is None or len(message.items) != 1:
+                continue
+            m = message.items[0]
+            if m == ks.BellIndex.B01 or m == ks.BellIndex.B11:
+                self._x_corr += 1
+            if m == ks.BellIndex.B10 or m == ks.BellIndex.B11:
+                self._z_corr += 1
+            self._counter += 1
+            if self._counter == self.num_nodes - 2:
+                if self._x_corr or self._z_corr:
+                    self._program.set_corrections(self._x_corr, self._z_corr)
+                    yield self.node.qmemory.execute_program(self._program, qubit_mapping=[1])
+                self.send_signal(Signals.SUCCESS)
+                self._x_corr = 0
+                self._z_corr = 0
+                self._counter = 0
 
 #In filtering example, two more nodes have been added to be able to entangle node A and C (this nodes are B_left and B_right respectively) 
 class FilteringExample(LocalProtocol):
@@ -514,16 +581,17 @@ class FilteringExample(LocalProtocol):
                           name="entangle_B_right"))
         #adding subprotocols to do purification in said node
         #here we will purify node A-B
+        #if purify we need epsilon, but if we distil we need distil role
         print(node_b.ID)
-        self.add_subprotocol(Filter(node_a, node_a.get_conn_port(node_b.ID),
-                                    epsilon=epsilon, name="purify_A"))
-        self.add_subprotocol(Filter(node_b, node_b.get_conn_port(node_a.ID),
-                                    epsilon=epsilon, name="purify_B_left"))
+        self.add_subprotocol(Distil(node_a, node_a.get_conn_port(node_b.ID),
+                                    role="A", name="purify_A"))
+        self.add_subprotocol(Distil(node_b, node_b.get_conn_port(node_a.ID),
+                                    role="B", name="purify_B_left"))
         #here we will purify node C-B
-        self.add_subprotocol(Filter(node_c, node_c.get_conn_port(node_b.ID),
-                                    epsilon=epsilon, name="purify_C"))
-        self.add_subprotocol(Filter(node_b, node_b.get_conn_port(node_c.ID),
-                                    epsilon=epsilon, name="purify_B_right"))
+        self.add_subprotocol(Distil(node_c, node_c.get_conn_port(node_b.ID),
+                                    role="A", name="purify_C"))
+        self.add_subprotocol(Distil(node_b, node_b.get_conn_port(node_c.ID),
+                                    role="B", name="purify_B_right"))
         # Set start expression, purify after entanglement is success for all entangling connections
         self.subprotocols["purify_A"].start_expression = (
             self.subprotocols["purify_A"].await_signal(self.subprotocols["entangle_A"],
@@ -537,6 +605,8 @@ class FilteringExample(LocalProtocol):
         self.subprotocols["purify_C"].start_expression = (
             self.subprotocols["purify_C"].await_signal(self.subprotocols["entangle_C"],
                                                        Signals.SUCCESS))
+        #here we can add swap
+        #swapping tbd here
         #expressions for entangling
         #this entangles A
         start_expr_ent_A = (self.subprotocols["entangle_A"].await_signal(
@@ -564,11 +634,10 @@ class FilteringExample(LocalProtocol):
             #original program has only one yield statement, which only returns the result of the purification and stores in in signals
             #here modified the orginal yield to connect A-B and added a new yield statement for the purification of C-B
             yield (self.await_signal(self.subprotocols["purify_A"], Signals.SUCCESS) &
-                   self.await_signal(self.subprotocols["purify_B_left"], Signals.SUCCESS))
+                   self.await_signal(self.subprotocols["purify_B_left"], Signals.SUCCESS)) & (self.await_signal(self.subprotocols["purify_C"], Signals.SUCCESS) &
+                   self.await_signal(self.subprotocols["purify_B_right"], Signals.SUCCESS))
             signal_A = self.subprotocols["purify_A"].get_signal_result(Signals.SUCCESS,self)
             signal_B_left = self.subprotocols["purify_B_left"].get_signal_result(Signals.SUCCESS,self)
-            yield (self.await_signal(self.subprotocols["purify_C"], Signals.SUCCESS) &
-                   self.await_signal(self.subprotocols["purify_B_right"], Signals.SUCCESS))
             signal_C = self.subprotocols["purify_C"].get_signal_result(Signals.SUCCESS,self)
             signal_B_right = self.subprotocols["purify_B_right"].get_signal_result(Signals.SUCCESS,self)
             #in result added the results of the prior part
@@ -589,7 +658,7 @@ class FilteringExample(LocalProtocol):
             self.send_signal(Signals.SUCCESS, result)
 
 
-def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate=100,
+def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate=1000,
                           node_distance=20):
     """Create an example network for use with the purification protocols.
 
@@ -605,33 +674,30 @@ def example_network_setup(source_delay=1e5, source_fidelity_sq=0.8, depolar_rate
     """
     #here we added the new node_C
     network = Network("purify_network")
+    state_sampler = StateSampler(
+        [ks.b01, ks.s00],
+        probabilities=[source_fidelity_sq, 1 - source_fidelity_sq])
     node_a, node_b, node_c = network.add_nodes(["node_A", "node_B", "node_C"])
     #setupA components which are Quantum processor and QuantumSource
     node_a.add_subcomponent(QuantumProcessor(
         "QuantumMemory_A", num_positions=2, fallback_to_nonphysical=True,
         memory_noise_models=DepolarNoiseModel(depolar_rate)))
-    state_sampler = StateSampler(
-        [ks.b01, ks.s00],
-        probabilities=[source_fidelity_sq, 1 - source_fidelity_sq])
     node_a.add_subcomponent(QSource(
         "QSource_A", state_sampler=state_sampler,
+        models={"emission_delay_model": FixedDelayModel(delay=source_delay)},
+        num_ports=2, status=SourceStatus.EXTERNAL))
+    #setupC same for A soruce and memory
+    node_c.add_subcomponent(QuantumProcessor(
+        "QuantumMemory_C", num_positions=2, fallback_to_nonphysical=True,
+        memory_noise_models=DepolarNoiseModel(depolar_rate)))
+    node_c.add_subcomponent(QSource(
+        "QSource_C", state_sampler=state_sampler,
         models={"emission_delay_model": FixedDelayModel(delay=source_delay)},
         num_ports=2, status=SourceStatus.EXTERNAL))
     #setupB (intermediate) here we add the quantum processor for b which has access to 4 memory slots
     node_b.add_subcomponent(QuantumProcessor(
         "QuantumMemory_B", num_positions=4, fallback_to_nonphysical=True,
         memory_noise_models=DepolarNoiseModel(depolar_rate)))
-    #setupC same for A soruce and memory
-    node_c.add_subcomponent(QuantumProcessor(
-        "QuantumMemory_C", num_positions=2, fallback_to_nonphysical=True,
-        memory_noise_models=DepolarNoiseModel(depolar_rate)))
-    state_sampler = StateSampler(
-        [ks.b01, ks.s00],
-        probabilities=[source_fidelity_sq, 1 - source_fidelity_sq])
-    node_c.add_subcomponent(QSource(
-        "QSource_C", state_sampler=state_sampler,
-        models={"emission_delay_model": FixedDelayModel(delay=source_delay)},
-        num_ports=2, status=SourceStatus.EXTERNAL))
     #classical connections
     #here we add the classical connections between AB and BC and we save them with their specific names
     conn_cchannelAB = DirectConnection(
@@ -702,7 +768,7 @@ def example_sim_setup(node_a, node_b, node_c, num_runs, epsilon=0.3):
         # Record fidelity (changed the name of q_C and the position that we call)
         q_A, = node_a.qmemory.pop(positions=[result["pos_A"]])
         q_B_left, = node_b.qmemory.pop(positions=[result["pos_B_left"]])
-        q_C, = node_c.qmemory.pop(positions=[result["pos_A"]])
+        q_C, = node_c.qmemory.pop(positions=[result["pos_C"]])
         q_B_right, = node_b.qmemory.pop(positions=[result["pos_B_right"]])
         f2 = qapi.fidelity([q_A, q_B_left], ks.b01, squared=True)
         f3 = qapi.fidelity([q_C, q_B_right], ks.b01, squared=True)
