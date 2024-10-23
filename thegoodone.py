@@ -564,7 +564,6 @@ class SwapProtocol(NodeProtocol):
             # Send result to right node on end
             self.node.ports["ccon_R"].tx_output(Message(m))
 
-
 class SwapCorrectProgram(QuantumProgram):
     """Quantum processor program that applies all swap corrections."""
     default_num_qubits = 1
@@ -580,7 +579,6 @@ class SwapCorrectProgram(QuantumProgram):
         if self.z_corr == 1:
             self.apply(INSTR_Z, q1)
         yield self.run()
-
 
 class CorrectProtocol(NodeProtocol):
     """Perform corrections for a swap on an end-node.
@@ -622,7 +620,6 @@ class CorrectProtocol(NodeProtocol):
                 self._x_corr = 0
                 self._z_corr = 0
                 self._counter = 0
-
 
 def create_qprocessor(name, links):
     """Factory to create a quantum processor for each node in the repeater chain network.
@@ -700,53 +697,61 @@ class PurifyProtocol(LocalProtocol):
         The filter purification does not support the stabilizer formalism.
 
     """
-
-    def __init__(self, node_a, node_b, num_runs, epsilon=0.3):
-        super().__init__(nodes={"A": node_a, "B": node_b}, name="Filtering example")
+    #here we define the attributes of the object
+    #wait for swapping signal
+    def __init__(self, node_left, node_right, num_runs, epsilon=0.3):
+        super().__init__(nodes={"A": node_left, "B": node_right}, name="Filter")
         self._epsilon = epsilon
         self.num_runs = num_runs
         # Initialise sub-protocols
-        #here call entanglement
-        self.add_subprotocol(EntangleNodes(node=node_a, role="source", input_mem_pos=0,
-                                           num_pairs=2, name="entangle_A"))
-        self.add_subprotocol(
-            EntangleNodes(node=node_b, role="receiver", input_mem_pos=0, num_pairs=2,
-                          name="entangle_B"))
-        self.add_subprotocol(Distil(node_a, node_a.get_conn_port(node_b.ID),
-                                    role="A", name="purify_A"))
-        self.add_subprotocol(Distil(node_b, node_b.get_conn_port(node_a.ID),
-                                    role="B", name="purify_B"))
+        #Q: should the entanglement be called again in here for the class or should I take entanglingconnection?
+        #here call entanglement should we
+        #name if entangle has been modified
+        self.add_subprotocol(EntangleNodes(node=node_left, role="source", input_mem_pos=0,
+                                           num_pairs=2, name="entangle_L"))
+        self.add_subprotocol(EntangleNodes(node=node_right, role="receiver", input_mem_pos=0,
+                                           num_pairs=2, name="entangle_R"))
+        # self.add_subprotocol(Distil(node_left, node_left.ports["ccon_R"],
+        #                             role="A", name="purify_L"))
+        # self.add_subprotocol(Distil(node_right, node_right.ports["ccon_L"],
+        #                             role="B", name="purify_R"))
+        self.add_subprotocol(Filter(node_left, node_left.ports["ccon_R"],
+                                    epsilon, name="purify_L"))
+        self.add_subprotocol(Filter(node_right, node_right.ports["ccon_L"],
+                                    epsilon, name="purify_R"))
+
+        #A=L and B=R
         # Set start expressions
         #tell this program to send signal success
-        self.subprotocols["purify_A"].start_expression = (
-            self.subprotocols["purify_A"].await_signal(self.subprotocols["entangle_A"],
+        self.subprotocols["purify_L"].start_expression = (
+            self.subprotocols["purify_L"].await_signal(self.subprotocols["entangle_L"],
                                                        Signals.SUCCESS))
-        self.subprotocols["purify_B"].start_expression = (
-            self.subprotocols["purify_B"].await_signal(self.subprotocols["entangle_B"],
+        self.subprotocols["purify_R"].start_expression = (
+            self.subprotocols["purify_R"].await_signal(self.subprotocols["entangle_R"],
                                                        Signals.SUCCESS))
-        start_expr_ent_A = (self.subprotocols["entangle_A"].await_signal(
-                            self.subprotocols["purify_A"], Signals.FAIL) |
-                            self.subprotocols["entangle_A"].await_signal(
+        start_expr_ent_a = (self.subprotocols["entangle_L"].await_signal(
+                            self.subprotocols["purify_L"], Signals.FAIL) |
+                            self.subprotocols["entangle_L"].await_signal(
                                 self, Signals.WAITING))
-        self.subprotocols["entangle_A"].start_expression = start_expr_ent_A
+        self.subprotocols["entangle_L"].start_expression = start_expr_ent_a
 
     def run(self):
         self.start_subprotocols()
         for i in range(self.num_runs):
             start_time = sim_time()
-            self.subprotocols["entangle_A"].entangled_pairs = 0
+            self.subprotocols["entangle_L"].entangled_pairs = 0
             self.send_signal(Signals.WAITING)
-            yield (self.await_signal(self.subprotocols["purify_A"], Signals.SUCCESS) &
-                   self.await_signal(self.subprotocols["purify_B"], Signals.SUCCESS))
-            signal_A = self.subprotocols["purify_A"].get_signal_result(Signals.SUCCESS,
+            yield (self.await_signal(self.subprotocols["purify_L"], Signals.SUCCESS) &
+                   self.await_signal(self.subprotocols["purify_R"], Signals.SUCCESS))
+            signal_A = self.subprotocols["purify_L"].get_signal_result(Signals.SUCCESS,
                                                                        self)
-            signal_B = self.subprotocols["purify_B"].get_signal_result(Signals.SUCCESS,
+            signal_B = self.subprotocols["purify_R"].get_signal_result(Signals.SUCCESS,
                                                                        self)
             result = {
                 "pos_A": signal_A,
                 "pos_B": signal_B,
-                "time": sim_time() - start_time,
-                "pairs": self.subprotocols["entangle_A"].entangled_pairs,
+                #"time": sim_time() - start_time,
+                "pairs": self.subprotocols["entangle_L"].entangled_pairs,
             }
             self.send_signal(Signals.SUCCESS, result)
 
@@ -783,7 +788,7 @@ def setup_network(num_nodes, node_distance, source_frequency):
     network.add_nodes(nodes)
     # Create quantum and classical connections:
     for i in range(num_nodes - 1):
-        node, node_right = nodes[i], nodes[i + 1]
+        node_left, node_right = nodes[i], nodes[i + 1]
         # Create quantum connection
         qconn = EntanglingConnection(name=f"qconn_{i}-{i+1}", length=node_distance,
                                      source_frequency=source_frequency)
@@ -793,20 +798,19 @@ def setup_network(num_nodes, node_distance, source_frequency):
             qconn.subcomponents[channel_name].models['quantum_noise_model'] =\
                 FibreDepolarizeModel()
         port_name, port_r_name = network.add_connection(
-            node, node_right, connection=qconn, label="quantum")
+            node_left, node_right, connection=qconn, label="quantum")
         # Forward qconn directly to quantum memories for right and left inputs:
-        node.ports[port_name].forward_input(node.qmemory.ports["qin0"])  # R input
-        node_right.ports[port_r_name].forward_input(
-            node_right.qmemory.ports["qin1"])  # L input
+        node_left.ports[port_name].forward_input(node_left.qmemory.ports["qin0"])  # R input
+        node_right.ports[port_r_name].forward_input(node_right.qmemory.ports["qin1"])  # L input
         # Create classical connection
         cconn = ClassicalConnection(name=f"cconn_{i}-{i+1}", length=node_distance)
         port_name, port_r_name = network.add_connection(
-            node, node_right, connection=cconn, label="classical",
+            node_left, node_right, connection=cconn, label="classical",
             port_name_node1="ccon_R", port_name_node2="ccon_L")
         #Forward cconn to right most node
-        if "ccon_L" in node.ports:
-            node.ports["ccon_L"].bind_input_handler(
-                lambda message, _node=node: _node.ports["ccon_R"].tx_output(message))
+        if "ccon_L" in node_left.ports:
+            node_left.ports["ccon_L"].bind_input_handler(
+                lambda message, _node=node_left: _node.ports["ccon_R"].tx_output(message))
     return network
 
 
@@ -835,11 +839,15 @@ def setup_repeater_protocol(network):
             if (i % 2)==1:
                 subprotocol = SwapProtocol(node=nodes_copy[i], name=f"Swap_{nodes_copy[i].name}") #swap protocol
                 protocol.add_subprotocol(subprotocol)
+                # filter = PurifyProtocol(node_left=nodes_copy[i], node_right=nodes_copy[i+1], num_runs=100, epsilon=0.3)
+                # protocol.add_subprotocol(filter)
                 swapped_nodes.append(nodes_copy[i]) #stores in the empty list
         for swapped in swapped_nodes:
                 nodes_copy.remove(swapped) 
-    # Add CorrectProtocol to Bob
+        print('checking')
+
     #if we modify this to nodes_copy it stops storing fidelity
+    # Add CorrectProtocol to Bob
     subprotocol = CorrectProtocol(nodes[-1], len(nodes))
     protocol.add_subprotocol(subprotocol)
     return protocol
@@ -865,20 +873,23 @@ def setup_datacollector(network, protocol):
     """
     # Ensure nodes are ordered in the chain:
     nodes = [network.nodes[name] for name in sorted(network.nodes.keys())]
-
+    nodes_copy=nodes.copy
     def calc_fidelity(evexpr):
         qubit_a, = nodes[0].qmemory.peek([0])
         qubit_b, = nodes[-1].qmemory.peek([1])
         fidelity = ns.qubits.fidelity([qubit_a, qubit_b], ks.b00, squared=True)
+        #print('t',ns.sim_time())
         return {"fidelity": fidelity}
+    
 
     dc = DataCollector(calc_fidelity, include_entity_name=False)
     dc.collect_on(pydynaa.EventExpression(source=protocol.subprotocols['CorrectProtocol'],
                                           event_type=Signals.SUCCESS.value))
+    
     return dc
 
 
-def run_simulation(num_nodes=4, node_distance=20, num_iters=100):
+def run_simulation(num_nodes=7, node_distance=20, num_iters=100):
     """Run the simulation experiment and return the collected data.
 
     Parameters
