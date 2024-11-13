@@ -564,6 +564,8 @@ class SwapProtocol(NodeProtocol):
             # Send result to right node on end
             self.node.ports["ccon_R"].tx_output(Message(m))
 
+            
+
 class SwapCorrectProgram(QuantumProgram):
     """Quantum processor program that applies all swap corrections."""
     default_num_qubits = 1
@@ -702,7 +704,7 @@ class PurifyProtocol(LocalProtocol):
     def __init__(self, node_left, node_right, num_runs, epsilon=0.3):
         super().__init__(nodes={"A": node_left, "B": node_right}, name="Filter")
         self._epsilon = epsilon
-        self.num_runs = num_runs
+        self.num_runs = num_runs        
         # Initialise sub-protocols
         #Q: should the entanglement be called again in here for the class or should I take entanglingconnection?
         #here call entanglement should we
@@ -715,25 +717,42 @@ class PurifyProtocol(LocalProtocol):
         #                             role="A", name="purify_L"))
         # self.add_subprotocol(Distil(node_right, node_right.ports["ccon_L"],
         #                             role="B", name="purify_R"))
-        self.add_subprotocol(Filter(node_left, node_left.ports["ccon_R"],
-                                    epsilon, name="purify_L"))
-        self.add_subprotocol(Filter(node_right, node_right.ports["ccon_L"],
-                                    epsilon, name="purify_R"))
+
+        # self.add_subprotocol(Filter(node_left, node_left.ports["ccon_R"],
+        #                             epsilon, name="purify_L"))
+        # print("Type of purify_L start_expression:", type(self.subprotocols["purify_L"].start_expression))
+
+        # self.add_subprotocol(Filter(node_right, node_right.ports["ccon_L"],
+        #                             epsilon, name="purify_R"))
+        # print("Debug: Added subprotocols:", list(self.subprotocols.keys()))
 
         #A=L and B=R
         # Set start expressions
-        #tell this program to send signal success
+        # tell this program to send signal success
         self.subprotocols["purify_L"].start_expression = (
             self.subprotocols["purify_L"].await_signal(self.subprotocols["entangle_L"],
                                                        Signals.SUCCESS))
         self.subprotocols["purify_R"].start_expression = (
             self.subprotocols["purify_R"].await_signal(self.subprotocols["entangle_R"],
                                                        Signals.SUCCESS))
-        start_expr_ent_a = (self.subprotocols["entangle_L"].await_signal(
+        astart_expression = (self.subprotocols["entangle_L"].await_signal(
                             self.subprotocols["purify_L"], Signals.FAIL) |
                             self.subprotocols["entangle_L"].await_signal(
                                 self, Signals.WAITING))
-        self.subprotocols["entangle_L"].start_expression = start_expr_ent_a
+        print("debugstatement")
+        self.subprotocols["entangle_L"].start_expression = astart_expression
+        self.send_signal(Signals.SUCCESS)
+        print("node_left:", node_left)
+        print("node_left.ports['ccon_R']:", node_left.ports.get("ccon_R"))
+        print("epsilon:", epsilon)
+        print("debugging:")
+        try:
+            filter_L = Filter(node_left, node_left.ports["ccon_R"],start_expression=astart_expression)
+            filter_R = Filter(node_right, node_right.ports["ccon_L"],start_expression=astart_expression)
+            print("Filter_L and Filter_R initialized")
+        except Exception as e:
+            print("Error during Filter initialization:", e)
+
 
     def run(self):
         self.start_subprotocols()
@@ -743,14 +762,14 @@ class PurifyProtocol(LocalProtocol):
             self.send_signal(Signals.WAITING)
             yield (self.await_signal(self.subprotocols["purify_L"], Signals.SUCCESS) &
                    self.await_signal(self.subprotocols["purify_R"], Signals.SUCCESS))
-            signal_A = self.subprotocols["purify_L"].get_signal_result(Signals.SUCCESS,
+            signal_L = self.subprotocols["purify_L"].get_signal_result(Signals.SUCCESS,
                                                                        self)
-            signal_B = self.subprotocols["purify_R"].get_signal_result(Signals.SUCCESS,
+            signal_R = self.subprotocols["purify_R"].get_signal_result(Signals.SUCCESS,
                                                                        self)
             result = {
-                "pos_A": signal_A,
-                "pos_B": signal_B,
-                #"time": sim_time() - start_time,
+                "pos_L": signal_L,
+                "pos_R": signal_R,
+                "time": sim_time() - start_time,
                 "pairs": self.subprotocols["entangle_L"].entangled_pairs,
             }
             self.send_signal(Signals.SUCCESS, result)
@@ -779,6 +798,7 @@ def setup_network(num_nodes, node_distance, source_frequency):
     network = Network("Repeater_chain_network")
     # Create nodes with quantum processors
     nodes = []
+    nodes_copy = []
     nestlvl=int(np.log2(num_nodes))
     #here nesting levels have been added and num zeros modified
     for i in range(num_nodes):
@@ -787,11 +807,14 @@ def setup_network(num_nodes, node_distance, source_frequency):
         nodes.append(Node(f"Node_{i:0{num_zeros}d}", qmemory=create_qprocessor(f"qproc_{i}",nestlvl)))
     network.add_nodes(nodes)
     # Create quantum and classical connections:
+    #add subcomponents
     for i in range(num_nodes - 1):
         node_left, node_right = nodes[i], nodes[i + 1]
         # Create quantum connection
         qconn = EntanglingConnection(name=f"qconn_{i}-{i+1}", length=node_distance,
                                      source_frequency=source_frequency)
+        #this is to give roles to network
+        # node_left.add_subcomponents(Qsource("QSource_L", StateSampler=StateSampler))
         # Add a noise model which depolarizes the qubits exponentially
         # depending on the connection length
         for channel_name in ['qchannel_C2A', 'qchannel_C2B']:
@@ -807,6 +830,7 @@ def setup_network(num_nodes, node_distance, source_frequency):
         port_name, port_r_name = network.add_connection(
             node_left, node_right, connection=cconn, label="classical",
             port_name_node1="ccon_R", port_name_node2="ccon_L")
+        print ("L:",port_name,"  R:",port_r_name)
         #Forward cconn to right most node
         if "ccon_L" in node_left.ports:
             node_left.ports["ccon_L"].bind_input_handler(
@@ -839,13 +863,13 @@ def setup_repeater_protocol(network):
             if (i % 2)==1:
                 subprotocol = SwapProtocol(node=nodes_copy[i], name=f"Swap_{nodes_copy[i].name}") #swap protocol
                 protocol.add_subprotocol(subprotocol)
-                # filter = PurifyProtocol(node_left=nodes_copy[i], node_right=nodes_copy[i+1], num_runs=100, epsilon=0.3)
-                # protocol.add_subprotocol(filter)
+
+                filter = PurifyProtocol(node_left=nodes_copy[i], node_right=nodes_copy[i+1], num_runs=100, epsilon=0.3)
+                protocol.add_subprotocol(filter)
                 swapped_nodes.append(nodes_copy[i]) #stores in the empty list
         for swapped in swapped_nodes:
                 nodes_copy.remove(swapped) 
         print('checking')
-
     #if we modify this to nodes_copy it stops storing fidelity
     # Add CorrectProtocol to Bob
     subprotocol = CorrectProtocol(nodes[-1], len(nodes))
