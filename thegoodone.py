@@ -718,17 +718,18 @@ class PurifyProtocol(LocalProtocol):
         # self.add_subprotocol(Distil(node_right, node_right.ports["ccon_L"],
         #                             role="B", name="purify_R"))
 
-        # self.add_subprotocol(Filter(node_left, node_left.ports["ccon_R"],
-        #                             epsilon, name="purify_L"))
-        # print("Type of purify_L start_expression:", type(self.subprotocols["purify_L"].start_expression))
+        self.add_subprotocol(Filter(node_left, node_left.ports["ccon_R"],start_expression=None,
+                                    epsilon=epsilon, name="purify_L"))
+        print("hi","Type of purify_L start_expression:", type(self.subprotocols["purify_L"].start_expression))
 
-        # self.add_subprotocol(Filter(node_right, node_right.ports["ccon_L"],
-        #                             epsilon, name="purify_R"))
-        # print("Debug: Added subprotocols:", list(self.subprotocols.keys()))
+        self.add_subprotocol(Filter(node_right, node_right.ports["ccon_L"],start_expression=None,
+                                    epsilon=epsilon, name="purify_R"))
+        print("Debug: Added subprotocols:", list(self.subprotocols.keys()))
 
         #A=L and B=R
-        # Set start expressions
-        # tell this program to send signal success
+        #Problem comes from filtering expecting a signal (start expression)
+        #Set start expressions
+        #tell this program to send signal success
         self.subprotocols["purify_L"].start_expression = (
             self.subprotocols["purify_L"].await_signal(self.subprotocols["entangle_L"],
                                                        Signals.SUCCESS))
@@ -863,7 +864,6 @@ def setup_repeater_protocol(network):
             if (i % 2)==1:
                 subprotocol = SwapProtocol(node=nodes_copy[i], name=f"Swap_{nodes_copy[i].name}") #swap protocol
                 protocol.add_subprotocol(subprotocol)
-
                 filter = PurifyProtocol(node_left=nodes_copy[i], node_right=nodes_copy[i+1], num_runs=100, epsilon=0.3)
                 protocol.add_subprotocol(filter)
                 swapped_nodes.append(nodes_copy[i]) #stores in the empty list
@@ -902,7 +902,7 @@ def setup_datacollector(network, protocol):
         qubit_a, = nodes[0].qmemory.peek([0])
         qubit_b, = nodes[-1].qmemory.peek([1])
         fidelity = ns.qubits.fidelity([qubit_a, qubit_b], ks.b00, squared=True)
-        #print('t',ns.sim_time())
+        #print('t',ns.sim_time())\
         return {"fidelity": fidelity}
     
 
@@ -956,9 +956,10 @@ def create_plot(num_iters=2000):
     fig, ax = plt.subplots()
     for distance in [10, 30, 50]:
         data = pandas.DataFrame()
-        nesting_levels=list(range(1,5))
+        nesting_levels=list(range(1,7))
         num_nodes = [int(2**nesting_level+1) for nesting_level in nesting_levels]
         for num_node in num_nodes:
+            print(f"======  num_node: {num_node}    distance: {distance}  =========")
             data[num_node] = run_simulation(num_nodes=num_node,
                                             node_distance=distance / num_node,
                                             num_iters=num_iters)['fidelity']
