@@ -183,7 +183,7 @@ As we see in the figure below, the error-bars now become negligible:
 import pandas
 import pydynaa
 import numpy as np
-
+import netsquid_driver as dv
 import netsquid as ns
 from netsquid.qubits import ketstates as ks
 from netsquid.components import Message, QuantumProcessor, QuantumProgram, PhysicalInstruction
@@ -217,6 +217,7 @@ from netsquid.components.models.delaymodels import FixedDelayModel, FibreDelayMo
 from netsquid.components.models import DepolarNoiseModel
 from netsquid.nodes.connections import DirectConnection
 from pydynaa import EventExpression
+
 __all__ = [
     "SwapProtocol",
     "SwapCorrectProgram",
@@ -814,7 +815,7 @@ def setup_network(num_nodes, node_distance, source_frequency):
         qconn = EntanglingConnection(name=f"qconn_{i}-{i+1}", length=node_distance,
                                      source_frequency=source_frequency)
         #this is to give roles to network
-        
+
         # node_left.add_subcomponents(Qsource("QSource_L", StateSampler=StateSampler))
         # Add a noise model which depolarizes the qubits exponentially
         # depending on the connection length
@@ -827,7 +828,7 @@ def setup_network(num_nodes, node_distance, source_frequency):
         node_left.ports[port_name].forward_input(node_left.qmemory.ports["qin0"])  # R input
         node_right.ports[port_r_name].forward_input(node_right.qmemory.ports["qin1"])  # L input
         # Create classical connection
-        cconn = ClassicalConnection(name=f"cconn_{i}-{i+1}", length=node_distance)
+        cconn = ClassicalConnection(name=f"cconn_{i}-{i+2}", length=node_distance)
         port_name, port_r_name = network.add_connection(
             node_left, node_right, connection=cconn, label="classical",
             port_name_node1="ccon_R", port_name_node2="ccon_L")
@@ -866,8 +867,10 @@ def setup_repeater_protocol(network):
             if (i % 2)==1:
                 subprotocol = SwapProtocol(node=nodes_copy[i], name=f"Swap_{nodes_copy[i].name}") #swap protocol
                 protocol.add_subprotocol(subprotocol)
-                # filter = PurifyProtocol(node_left=nodes_copy[i-1], node_right=nodes_copy[i+1], num_runs=100, epsilon=0.3)
-                # protocol.add_subprotocol(filter)
+                print("the node",nodes_copy[i] ,"has been swapped")
+                filter = PurifyProtocol(node_left=nodes_copy[i-1], node_right=nodes_copy[i+1], num_runs=100, epsilon=0.3)
+                protocol.add_subprotocol(filter)
+                # network.add_connection(node_left=nodes_copy[i-1],node_right=nodes_copy[i+1])
                 print(f"Node left{nodes_copy[i-1].name} ports: {list(nodes_copy[i-1].ports.keys())}")
                 print(f"Node right{nodes_copy[i+1].name} ports: {list(nodes_copy[i+1].ports.keys())}")
                 print(f"Node_1 ccon_R connected to: {nodes_copy[i-1].ports['ccon_R'].connected_port}")
@@ -876,6 +879,8 @@ def setup_repeater_protocol(network):
         for swapped in swapped_nodes:
                 nodes_copy.remove(swapped) 
         print('checking')
+        # connect = EntanglingConnection(name=f"qconn_{i}-{nest_lvl}",length=len(nodes_copy),source_frequency=None)
+        # protocol.add_subprotocol(connect)
     #if we modify this to nodes_copy it stops storing fidelity
     # Add CorrectProtocol to Bob
     subprotocol = CorrectProtocol(nodes[-1], len(nodes))
@@ -919,7 +924,7 @@ def setup_datacollector(network, protocol):
     return dc
 
 
-def run_simulation(num_nodes=7, node_distance=20, num_iters=100):
+def run_simulation(num_nodes=6, node_distance=20, num_iters=100):
     """Run the simulation experiment and return the collected data.
 
     Parameters
