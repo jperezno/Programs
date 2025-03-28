@@ -33,8 +33,8 @@ def indices(A,B,C,D,N):
 A=0.85
 print('The value of A wont change as its fixed A=',A, 'and the sum of A,B,C,D cant be more than 1')
 #values for B,C,D
-B=0.10
-C=0.025
+B=0.025
+C=0.10
 D=0.025
 check=A+B+C+D
 print("sum=",check)
@@ -44,14 +44,14 @@ print('The original fidelity is F=',Nor)
 
 #iterator
 iterations = []
-A_val, B_val, C_val, D_val = [], [], [], []
+A_val,B_val,C_val,D_val = [],[],[],[]
 i=1
 iter=5
 print('Table:')
 #After every round we will permute B,C,D and leave A untouched
 #A,B,C,D
 while i <= iter:
-    print("Iteration",i)
+    # print("Iteration",i)
     iterations.append(i)
     A_val.append(A)
     B_val.append(B)

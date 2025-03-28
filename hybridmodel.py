@@ -61,36 +61,6 @@ def normalization_error(x1,x2,y1,y2,eta):
     norm_error=(((x1+x2)**2+(y1+y2)**2)*(no_readerror(eta)) + (2*(x1+x2)*(y1+y2)*(readerror(eta))))
     return(norm_error)
 
-##this is not yet used
-# gateerrors            A  B  C  D
-def pauli_err_phiplus(px,py,pz,x1,x2,y1,y2):#A
-    # eps_x=((y1*y1)+(y2*y2))
-    # eps_y=((y1*y2)+(y1*y2))
-    # eps_z=((x1*x2)+(x1*x2))
-    pauli_phi_plus=(px*((y1*y1)+(y2*y2)))+(py*((y1*y2)+(y1*y2)))+(pz*((x1*x2)+(x1*x2)))
-    return (eps_x,eps_y,eps_z)
-
-def pauli_err_phiminus(px,py,pz,x1,x2,y1,y2):#B
-    # eps_x=((y1*y2)+(y1*y2))
-    # eps_y=((y1*y1)+(y2*y2))
-    # eps_z=((x1*x1)+(x2*x2))
-    pauli_phi_min=(px*((y1*y2)+(y1*y2)))+(py*((y1*y1)+(y2*y2)))+(pz*((x1*x1)+(x2*x2)))
-    return(eps_x,eps_y,eps_z)
-
-def pauli_err_psiplus(px,py,pz,x1,x2,y1,y2):#C
-    # eps_x=((x1*y1)+(x2*y2))
-    # eps_y=((x1*y2)+(x2*y1))
-    # eps_z=((x1*y2)+(x2*y1))
-    pauli_psi_plus=(px*((x1*y1)+(x2*y2)))+(py*((x1*y2)+(x2*y1)))+(pz*((x1*y2)+(x2*y1)))
-    return(eps_x,eps_y,eps_z)
-
-def pauli_err_psiminus(px,py,pz,x1,x2,y1,y2):#D
-    # eps_x=((x1*y2)+(x2*y1))
-    # eps_y=((x1*y1)+(x2*y2))
-    # eps_z=((x1*y1)+(x2*y2))
-    pauli_psi_min=(px*((x1*y2)+(x2*y1)))+(py*((x1*y1)+(x2*y2)))+(pz*((x1*y1)+(x2*y2)))
-    return(eps_x,eps_y,eps_z)
-
 def indices(A,B,C,D,eta,N,eps_g,px,py,pz):
     Asign= Aerror_quad(A,B,C,D,eta,N,eps_g,px,py,pz)
     Bsign= Berror_line(C,D,A,B,eta,N,eps_g,px,py,pz)
@@ -105,7 +75,7 @@ def indices(A,B,C,D,eta,N,eps_g,px,py,pz):
 eta=(1-(10e-4))
 eps_g=5e-4
 # PauliErrors=0.5
-px=0.8
+px=0.5
 py=px
 pz=py
 #first round here we assume A remains as it is but take B=C=D
@@ -126,7 +96,7 @@ print('The original fidelity is F=',Nor)
 iterations = []
 A_val, B_val, C_val, D_val = [], [], [], []
 i=1
-iter=5
+iter=6
 print('Table:')
 #After every round we will permute B,C,D and leave A untouched
 #A,B,C,D
@@ -146,6 +116,11 @@ while i <= iter:
     B=Bsign
     C=Csign
     D=Dsign
+    if i!=1:
+        B,C,D= D,C,B
+        # check=A+B+C+D
+        # print("sum=",check)
+        Nor=normalization_error(A,B,C,D,eta)
     check=A+B+C+D
     print("sum=",check)
     Nor=normalization_error(A,B,C,D,eta)
