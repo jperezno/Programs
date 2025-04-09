@@ -61,35 +61,6 @@ def normalization_error(x1,x2,y1,y2,eta):
     norm_error=(((x1+x2)**2+(y1+y2)**2)*(no_readerror(eta)) + (2*(x1+x2)*(y1+y2)*(readerror(eta))))
     return(norm_error)
 
-##this is not yet used
-# gateerrors            A  B  C  D
-def pauli_err_phiplus(px,py,pz,x1,x2,y1,y2):#A
-    # eps_x=((y1*y1)+(y2*y2))
-    # eps_y=((y1*y2)+(y1*y2))
-    # eps_z=((x1*x2)+(x1*x2))
-    pauli_phi_plus=(px*((y1*y1)+(y2*y2)))+(py*((y1*y2)+(y1*y2)))+(pz*((x1*x2)+(x1*x2)))
-    return (eps_x,eps_y,eps_z)
-
-def pauli_err_phiminus(px,py,pz,x1,x2,y1,y2):#B
-    # eps_x=((y1*y2)+(y1*y2))
-    # eps_y=((y1*y1)+(y2*y2))
-    # eps_z=((x1*x1)+(x2*x2))
-    pauli_phi_min=(px*((y1*y2)+(y1*y2)))+(py*((y1*y1)+(y2*y2)))+(pz*((x1*x1)+(x2*x2)))
-    return(eps_x,eps_y,eps_z)
-
-def pauli_err_psiplus(px,py,pz,x1,x2,y1,y2):#C
-    # eps_x=((x1*y1)+(x2*y2))
-    # eps_y=((x1*y2)+(x2*y1))
-    # eps_z=((x1*y2)+(x2*y1))
-    pauli_psi_plus=(px*((x1*y1)+(x2*y2)))+(py*((x1*y2)+(x2*y1)))+(pz*((x1*y2)+(x2*y1)))
-    return(eps_x,eps_y,eps_z)
-
-def pauli_err_psiminus(px,py,pz,x1,x2,y1,y2):#D
-    # eps_x=((x1*y2)+(x2*y1))
-    # eps_y=((x1*y1)+(x2*y2))
-    # eps_z=((x1*y1)+(x2*y2))
-    pauli_psi_min=(px*((x1*y2)+(x2*y1)))+(py*((x1*y1)+(x2*y2)))+(pz*((x1*y1)+(x2*y2)))
-    return(eps_x,eps_y,eps_z)
 
 def indices(A,B,C,D,eta,N,eps_g,px,py,pz):
     Asign= Aerror_quad(A,B,C,D,eta,N,eps_g,px,py,pz)
@@ -105,21 +76,21 @@ def indices(A,B,C,D,eta,N,eps_g,px,py,pz):
 eta=(1-(10e-4))
 eps_g=5e-4
 # PauliErrors=0.5
-px=0.8
-py=px
-pz=py
+px=0.25
+py=0.25
+pz=0.5
 #first round here we assume A remains as it is but take B=C=D
 #lets assume A is just a random number close to 1
-A=0.85
+A=0.8
 print('The value of A wont change as its fixed A=',A, 'and the sum of A,B,C,D cant be more than 1')
 #values for B,C,D
-B=0.10
-C=0.025
-D=0.025
+B=0.01
+C=0.19
+D=0.02
 check=A+B+C+D
 print("sum=",check)
 #Normalization factor for the first time is always gonna be the same
-Nor=normalization_error(A,B,C,D,eta)
+Nor=normalization_error(A,D,C,B,eta)
 print('The original fidelity is F=',Nor)
 
 #iterator
@@ -138,7 +109,7 @@ while i <= iter:
     C_val.append(C)
     D_val.append(D)
     #inside the brackets we modify ABCD accordingly,
-    Asign,Bsign,Csign,Dsign=indices(A,B,C,D,eta,Nor,eps_g,px,py,pz)
+    Asign,Bsign,Csign,Dsign=indices(A,D,C,B,eta,Nor,eps_g,px,py,pz)
     print(i,Asign,Bsign,Csign,Dsign)
     # print(f"A={Asign}, B={Bsign},C={Csign},D={Dsign}")
     #update of the values for the next round:
@@ -148,7 +119,7 @@ while i <= iter:
     D=Dsign
     check=A+B+C+D
     print("sum=",check)
-    Nor=normalization_error(A,B,C,D,eta)
+    Nor=normalization_error(A,D,C,B,eta)
     i=i+1
 
 # Plot results
@@ -160,7 +131,7 @@ plt.plot(iterations, D_val, label='D', marker='x')
 
 plt.xlabel('Iteration')
 plt.ylabel('Fidelities')
-plt.title('Purification over iterations')
+plt.title('Purification over iterations ERROR MODEL')
 plt.legend()
 plt.grid(True)
 plt.show()

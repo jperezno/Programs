@@ -75,17 +75,17 @@ def indices(A,B,C,D,eta,N,eps_g,px,py,pz):
 eta=(1-(10e-4))
 eps_g=5e-4
 # PauliErrors=0.5
-px=0.5
-py=px
-pz=py
+px=0.25
+py=0.25
+pz=0.5
 #first round here we assume A remains as it is but take B=C=D
 #lets assume A is just a random number close to 1
-A=0.85
+A=0.8
 print('The value of A wont change as its fixed A=',A, 'and the sum of A,B,C,D cant be more than 1')
 #values for B,C,D
-B=0.10
-C=0.025
-D=0.025
+B=0.01
+C=0.19
+D=0.02
 check=A+B+C+D
 print("sum=",check)
 #Normalization factor for the first time is always gonna be the same
@@ -96,7 +96,7 @@ print('The original fidelity is F=',Nor)
 iterations = []
 A_val, B_val, C_val, D_val = [], [], [], []
 i=1
-iter=6
+iter=5
 print('Table:')
 #After every round we will permute B,C,D and leave A untouched
 #A,B,C,D
@@ -108,7 +108,7 @@ while i <= iter:
     C_val.append(C)
     D_val.append(D)
     #inside the brackets we modify ABCD accordingly,
-    Asign,Bsign,Csign,Dsign=indices(A,B,C,D,eta,Nor,eps_g,px,py,pz)
+    Asign,Bsign,Csign,Dsign=indices(A,D,C,B,eta,Nor,eps_g,px,py,pz)
     print(i,Asign,Bsign,Csign,Dsign)
     # print(f"A={Asign}, B={Bsign},C={Csign},D={Dsign}")
     #update of the values for the next round:
@@ -116,14 +116,17 @@ while i <= iter:
     B=Bsign
     C=Csign
     D=Dsign
-    if i!=1:
-        B,C,D= D,C,B
-        # check=A+B+C+D
-        # print("sum=",check)
-        Nor=normalization_error(A,B,C,D,eta)
+    if i%2==0:
+        #if i is multiple of 3 then BCD= avg of 
+        B=(B+C+D)/3
+        C=B
+        D=C
+        check=A+B+C+D
+        print("sum=",check)
+        Nor=normalization_error(A,D,C,B,eta)
     check=A+B+C+D
     print("sum=",check)
-    Nor=normalization_error(A,B,C,D,eta)
+    Nor=normalization_error(A,D,C,B,eta)
     i=i+1
 
 # Plot results

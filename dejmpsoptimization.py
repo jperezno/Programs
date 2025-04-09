@@ -14,7 +14,7 @@ def equ7lin(y1,y2,N):
 def normalization (x1,x2,y1,y2):
 ##This one under is the normalization factor for the DEJMPS protocol
 ##  dejmp((A + B)**2+(C + D)**2
-#   norm=((x1+x2)**2+(y1+y2)**2)
+    # norm=((x1+x2)**2+(y1+y2)**2)
 ##This one under is the normalization factor for the protocol without depolarizing step
     norm=((x1+y2)**2+(y1+x2)**2)
     return(norm)
@@ -30,12 +30,12 @@ def indices(A,B,C,D,N):
 #lets give some numbers to the program
 #first round here we assume A remains as it is but take B=C=D
 #lets assume A is just a random number close to 1
-A=0.85
+A=0.8
 print('The value of A wont change as its fixed A=',A, 'and the sum of A,B,C,D cant be more than 1')
 #values for B,C,D
-B=0.025
-C=0.10
-D=0.025
+B=0.01
+C=0.19
+D=0.02
 check=A+B+C+D
 print("sum=",check)
 #Normalization factor for the first time is always gonna be the same
@@ -58,7 +58,8 @@ while i <= iter:
     C_val.append(C)
     D_val.append(D)
     #inside the brackets we modify ABCD accordingly,
-    Asign,Bsign,Csign,Dsign=indices(A,B,C,D,Nor)    
+    #DEJMPS IS THE INDICES (A,D,C,B)
+    Asign,Bsign,Csign,Dsign=indices(A,D,C,B,Nor)    
     print(i,Asign,Bsign,Csign,Dsign)
     # print(f"A={Asign}, B={Bsign},C={Csign},D={Dsign}")
     #update of the values for the next round:
@@ -66,9 +67,10 @@ while i <= iter:
     B=Bsign
     C=Csign
     D=Dsign
-    # check=A+B+C+D
-    # print("sum=",check)
-    Nor=normalization(A,B,C,D)
+    check=A+B+C+D
+    print("sum=",check)
+    #DEJMPS IS THE INDICES (A,D,C,B)
+    Nor=normalization(A,D,C,B)
     i=i+1
 
 # Plot results
@@ -80,7 +82,7 @@ plt.plot(iterations, D_val, label='D', marker='x')
 
 plt.xlabel('Iteration')
 plt.ylabel('Fidelities')
-plt.title('Purification over iterations')
+plt.title('Purification over iterations DEJMPS')
 plt.legend()
 plt.grid(True)
 plt.show()
