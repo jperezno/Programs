@@ -20,7 +20,6 @@ def egate_er(eps_g):
 
 #finish error functions
 #todo add probabilities
-#Aqui en estas hay que reemplazar B con D, se me fue no se te olvide, este error fue arreglado en presentacion
 ################original
 def error_quad(x1,x2,y1,y2,eta,N,eps_g,PauliErrors):
     err_quad=(((x1**2)+(x2**2))*(no_readerror(eta)) + (((x1*y1)+(x2*y2))*(readerror(eta))) +
@@ -49,16 +48,18 @@ def error_line(x1,x2,y1,y2,eta,N,eps_g,PauliErrors):
 #Dsign= error_line(A,B,C,D,eta,N,eps_g,psimin)
 def Berror_line(x1,x2,y1,y2,eta,N,eps_g,px,py,pz):
     err_line= ((2*y1*y2)*(no_readerror(eta)) + (((x1*y2)+(y1*x2))*(readerror(eta))) + 
-    (egate_er(eps_g))*((px*((y1*y2)+(y1*y2)))+(py*((y1*y1)+(y2*y2)))+(pz*((x1*x1)+(x2*x2)))))/(N/((1-eps_g)**2))
+    (egate_er(eps_g))*((px*((y1*x2)+(x1*y2)))+(py*((y1*x1)+(y2*x2)))+(pz*((y1*x1)+(y2*x2)))))/(N/((1-eps_g)**2))
     return (err_line)
 def Derror_line(x1,x2,y1,y2,eta,N,eps_g,px,py,pz):
     err_line= ((2*y1*y2)*(no_readerror(eta)) + (((x1*y2)+(y1*x2))*(readerror(eta))) + 
-    (egate_er(eps_g))*((px*((x1*y2)+(x2*y1)))+(py*((x1*y1)+(x2*y2)))+(pz*((x1*y1)+(x2*y2)))))/(N/((1-eps_g)**2))
+    (egate_er(eps_g))*((px*((y1*y2)+(y2*y1)))+(py*((y1*y1)+(y2*y2)))+(pz*((x1*x1)+(x2*x2)))))/(N/((1-eps_g)**2))
     return (err_line)
 
 
 def normalization_error(x1,x2,y1,y2,eta):
     norm_error=(((x1+x2)**2+(y1+y2)**2)*(no_readerror(eta)) + (2*(x1+x2)*(y1+y2)*(readerror(eta))))
+    # norm_error=(((x1+y2)**2+(y1+x2)**2)*(no_readerror(eta)) + (2*(x1+x2)*(y1+y2)*(readerror(eta))))
+
     return(norm_error)
 
 def indices(A,B,C,D,eta,N,eps_g,px,py,pz):
@@ -84,7 +85,7 @@ A=0.8
 print('The value of A wont change as its fixed A=',A, 'and the sum of A,B,C,D cant be more than 1')
 #values for B,C,D
 B=0.01
-C=0.19
+C=0.17
 D=0.02
 check=A+B+C+D
 print("sum=",check)

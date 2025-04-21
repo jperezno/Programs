@@ -58,7 +58,11 @@ def Derror_line(x1,x2,y1,y2,eta,N,eps_g,px,py,pz):
 
 
 def normalization_error(x1,x2,y1,y2,eta):
+        #DEJMPS IS THE INDICES (A,D,C,B)
     norm_error=(((x1+x2)**2+(y1+y2)**2)*(no_readerror(eta)) + (2*(x1+x2)*(y1+y2)*(readerror(eta))))
+        #no depolarization step here under
+    # norm_error=(((x1+y2)**2+(y1+x2)**2)*(no_readerror(eta)) + (2*(x1+x2)*(y1+y2)*(readerror(eta))))
+
     return(norm_error)
 
 
@@ -91,7 +95,7 @@ check=A+B+C+D
 print("sum=",check)
 #Normalization factor for the first time is always gonna be the same
 Nor=normalization_error(A,D,C,B,eta)
-print('The original fidelity is F=',Nor)
+print('Prob of success=',Nor)
 
 #iterator
 iterations = []
