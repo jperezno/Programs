@@ -29,9 +29,11 @@ def acc_prob(A,B,C,D,eta):
 # each time we apply dejmps we take a note of P_f
 # Run simulation for a single starting fidelity
 
-def simulate_purification(source_fid, F_target, max_iter=100):
-    epsilon_g = 0
-    eta = 1
+def simulate_purification(source_fid, F_target, eta,epsilon_g,max_iter=100):
+    # pre_swap_fid=F_target #Our TARGET is to go back to this fidelity
+    # source_fid=(1 + ((4 * (eta) ** 2 - 1) * ((4 *pre_swap_fid - 1) / 3) ** 2)) / 4
+    # print (source_fid)
+    # here and print n as a functuion of the target fid (swap fidelity)
     p_z = 0.5
     p_x = (1 - p_z)/2
     p_y = (1 - p_z)/2
@@ -50,26 +52,47 @@ def simulate_purification(source_fid, F_target, max_iter=100):
         A, B, C, D = A_new, D_new, C_new, B_new  #B to D flip
         p = acc_prob(A, B, C, D, eta)
         iterations += 1
-
+        
+        if epsilon_g == 0.01 and A >= 0.95:
+            return iterations , A
+            # return (math.log2((2**(iterations*2))/p)+1), A
         if A >= F_target:
-            return (math.log2((2**(iterations))/p)+1), A
+            return iterations , A
+            # return (math.log2((2**(iterations*2))/p)+1), A
     return None, A  # Failed to reach target
 
-# Sweep over starting fidelities
-start_vals = [round(x, 3) for x in list([0.5 + 0.01*i for i in range(50)])]
-results = []
+configs = [
+    {'epsilon_g': 0.0, 'eta': 1.0, 'label': r'$\epsilon_r=0,\ \epsilon_g=0$', 'color': 'blue'},
+    {'epsilon_g': 0.0, 'eta': 0.99, 'label': r'$\epsilon_r=0.01,\ \epsilon_g=0$', 'color': 'green'},
+    {'epsilon_g': 0.01, 'eta': 1.0, 'label': r'$\epsilon_r=0,\ \epsilon_g=0.01$', 'color': 'red'},
+]
 
-for val in start_vals:
-    iters, final_fid = simulate_purification(val, F_target=0.98)
-    results.append((val, iters, final_fid))
+# Sweep over pre-swap fidelities (i.e., intended targets)
+target_vals = [round(0.75 + 0.005 * i, 3) for i in range(int((0.99 - 0.75) / 0.005) + 1)]
+max_iter = 100
 
-# Plot results
-plt.figure(figsize=(8,5))
-plt.plot([r[0] for r in results], [r[1] if r[1] else 0 for r in results], 'bo')
-plt.xlabel(r'$F_t$')
-plt.ylabel(r'$\lambda$')
-plt.title('Resource estimation')
+plt.figure(figsize=(8, 5))
+
+for config in configs:
+    results = []
+    eta = config['eta']
+    epsilon_g = config['epsilon_g']
+    print(f"\n--- Results for {config['label']} ---")
+    
+    for F_target in target_vals:
+        source_fid = (1 + ((4 * eta ** 2 - 1) * ((4 * F_target - 1) / 3) ** 2)) / 4
+        iters, final_fid = simulate_purification(source_fid, F_target, eta, epsilon_g)
+        results.append((F_target, iters if iters is not None else max_iter, final_fid))
+        print(f"Pre swap F: {F_target:.3f} Post-swap F: {source_fid:.5f}, Steps: {iters if iters is not None else 'Failed'}")
+
+    x_vals = [r[0] for r in results]
+    y_vals = [r[1] for r in results]
+    plt.plot(x_vals, y_vals, 'o-', color=config['color'], label=config['label'])
+
+plt.xlabel(r'Target fidelity')
+plt.ylabel('Number of purification steps')
+plt.title('Steps to restore fidelity after swap')
 plt.legend()
 plt.grid(True)
-plt.tight_layout
+plt.tight_layout()
 plt.show()
