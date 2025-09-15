@@ -6,17 +6,31 @@ import matplotlib.pyplot as plt
 def apply_swap_fidelity(F, eta):
     term = ((4 * F - 1) / 3) ** 2
     return (1 + ((4 * eta ** 2 - 1) * term)) / 4
+def sim_swap_decay_lin(F_start, eta, num_swaps):
+    n_swap_list=np.arange(2,num_swaps+1) 
+    fen = (1+((4 * F_start - 1) / 3) ** (n_swap_list)*(((4 * eta ** 2 - 1)/3)**(n_swap_list-1)*3))/4
+    return fen
 
-def simulate_swap_decay(F_start, eta, num_swaps):
-    F = F_start
-    swap_fidelity = [F] #List for values
+def print_swap (F_start, eta, num_swaps):
+    F=sim_swap_decay_lin(F_start, eta, num_swaps)
     print("=== Entanglement swapping ===")
     for swaps in range(1, num_swaps + 1):
-        F = apply_swap_fidelity(F, eta)
-        swap_fidelity.append(F)
-        print(f"Swap {swaps}: F = {F:.6f}")
-    return F, swap_fidelity
+        print(f"Swap {swaps}: F = {F[swaps-1]:.6f}")
+    return F[-1],F
+# def print_swap(F_start, eta, num_swaps):
+#     F = F_start
+#     swap_fidelity = [F] #List for values
+#     print("=== Entanglement swapping ===")
+#     for swaps in range(1, num_swaps + 1):
+#         F = apply_swap_fidelity(F, eta)
+#         swap_fidelity.append(F)
+#         print(f"Swap {swaps}: F = {F:.6f}")
+#     return F, swap_fidelity
 
+# def test(F_start, eta, num_swaps):
+#     F_start, eta 
+#     print_swap(F_start,eta,8)
+#     print_swap(F_start, eta, 3)
 ######Purifying######
 
 def hybA(A,B,C,D,eta,epsilon_g,p_x,p_y,p_z):
@@ -44,19 +58,16 @@ def simulate_purification(source_fid, F_target, eta, epsilon_g,n_swaps, max_iter
     p_x = (1 - p_z) / 2
     p_y = (1 - p_z) / 2
     A = source_fid
-    # B = C = D = (1 - A) / 3
-    B = 0.05*(1-A)
-    C = 0.05*(1-A)
-    D = 0.9*(1-A)
+    B = C = D = (1 - A) / 3
+    # B = (1 - A) / 12
+    # C = 4*(1 - A) / 6
+    # D = (1 - A) / 12
     p = acc_prob(A, B, C, D, eta)
     iterations = 0
     p_prod = 1
 
-    # Track values
+    # Let's save some relevant values
     A_list = [A]
-    B_list = [B]
-    C_list = [C]
-    D_list = [D]
     p_list = [p]
 
     while A < F_target and iterations < max_iter:
@@ -69,27 +80,59 @@ def simulate_purification(source_fid, F_target, eta, epsilon_g,n_swaps, max_iter
         p = acc_prob(A, B, C, D, eta)
         p_prod *= p
         iterations += 1
-
-        # Save values each iteration
         A_list.append(A)
-        B_list.append(B)
-        C_list.append(C)
-        D_list.append(D)
         p_list.append(p)
-
         print(f"Purification {iterations}: A = {A:.6f}, P = {p:.6f}")
 
     if A >= F_target:
-        cost = 1 + math.log(((2 ** iterations) / p_prod),2**n_swaps)
-        return cost, A, iterations, A_list, B_list, C_list, D_list, p_list
+        cost = 1 + math.log(((2 ** iterations) / p_prod),n_swaps)
+        return cost, A, iterations, A_list, p_list
     else:
-        return None, A, iterations, A_list, B_list, C_list, D_list, p_list # Failed to reach target
+        return None, A, iterations, A_list, p_list # Failed to reach target
+def simulate_purification_FRIDay(source_fid, F_target, eta, epsilon_g,n_swaps, max_iter=10,be_print=False):
+    p_z = 0.5
+    p_x = (1 - p_z) / 2
+    p_y = (1 - p_z) / 2
+    A = sim_swap_decay_lin(source_fid,eta,n_swaps)
+    B = C = D = (1 - A) / 3
+    # B = (1 - A) / 12
+    # C = 4*(1 - A) / 6
+    # D = (1 - A) / 12
+    p = acc_prob(A, B, C, D, eta)
+    iterations = 0
+    p_prod = 1
+
+
+    while iterations < max_iter:
+        A_new = hybA(A,B,C,D,eta,epsilon_g,p_x,p_y,p_z) / p
+        B_new = hybB(A,B,C,D,eta,epsilon_g,p_x,p_y,p_z) / p
+        C_new = hybC(A,B,C,D,eta,epsilon_g,p_x,p_y,p_z) / p
+        D_new = hybD(A,B,C,D,eta,epsilon_g,p_x,p_y,p_z) / p
+        A, B, C, D = A_new, D_new, C_new, B_new  # Flip B and D
+
+        p = acc_prob(A, B, C, D, eta)
+        p_prod *= p
+        iterations += 1
+
+    condition = A >= F_target
+    n_swap_list=np.arange(2,n_swaps+1) 
+    if condition[0]:
+        num_swaps_max = np.nonzero(condition)[0][-1]+2
+        cost = 1 + (np.log(((2 ** iterations) / p_prod))/(np.log(n_swap_list)))
+        opt_n_swap=np.argmin(cost)+2
+        best_swap=np.minimum(num_swaps_max,opt_n_swap)
+        if be_print :
+            print(f"best_swap{best_swap}, cost {cost[best_swap-2]}, A {A}")
+            print(np.nonzero(condition))
+        return cost[best_swap-2], num_swaps_max, A[best_swap-2]
+    else:
+        return 0,0,0
 
 def find_optimal_swap_purify(F_0, eta, epsilon_g, max_swaps=20, max_purify_steps=10):
     print(f"\n=== Optimizing Setup for F0 = {F_0}, eta = {eta}, epsilon_g = {epsilon_g} ===")
     results = []
     for n_swaps in range(1, max_swaps + 1):
-        F_s, _ = simulate_swap_decay(F_0, eta, n_swaps)
+        F_s, _ = print_swap(F_0, eta, n_swaps)
         cost, F_final, purify_steps, _, _ = simulate_purification(F_s, F_0, eta, epsilon_g, max_purify_steps)
 
         if F_final >= F_0 and purify_steps <= max_purify_steps:
@@ -111,22 +154,19 @@ def find_optimal_swap_purify(F_0, eta, epsilon_g, max_swaps=20, max_purify_steps
 def run_full_simulation(F_0, eta, epsilon_g, num_swaps, max_purify_steps=10):
     print(f"\n=== Simulating for F0 = {F_0}, Er = {1-eta}, Eg = {epsilon_g} ===")
     # Step 1: Swap fidelity decay
-    F_s, swap_fidelity = simulate_swap_decay(F_0, eta, num_swaps)
+    F_s, swap_fidelity = print_swap(F_0, eta, num_swaps)
 
     # Step 2: Purification
-    cost, F_final, n_purify, A_list, B_list, C_list, D_list, p_list = simulate_purification(
-        F_s, F_0, eta, epsilon_g,num_swaps ,max_purify_steps
-    )
-
-    fig, axs = plt.subplots(3, 1, figsize=(8, 12))
-    fig.suptitle(f"Entanglement swapping & purification for SiV", fontsize=14)
+    cost, F_final, n_purify, A_list, p_list = simulate_purification(F_s, F_0, eta, epsilon_g,num_swaps ,max_purify_steps)
+    fig, axs = plt.subplots(2, 1, figsize=(8, 8))
+    # fig.suptitle(f"Swap and Purification Simulation\nF₀ = {F_0}, eta = {eta}, epsilon_g = {epsilon_g}, Swaps = {num_swaps}", fontsize=14)
+    fig.suptitle(f"Successive entanglement swapping", fontsize=14)
 
     # Plot swap fidelity
     axs[0].plot(range(len(swap_fidelity)), swap_fidelity, marker='o', color='blue', label='Swap Fidelity')
     axs[0].axhline(F_0, color='gray', linestyle='--', label='Target Fidelity')
     axs[0].set_title("Fidelity After Swaps")
-    axs[0].set_xlabel("Swap step")
-    # axs[0].set_xlabel("(log(swap))")
+    axs[0].set_xlabel("Swap Step")
     axs[0].set_ylabel("Fidelity")
     axs[0].legend()
     axs[0].grid(True)
@@ -141,17 +181,6 @@ def run_full_simulation(F_0, eta, epsilon_g, num_swaps, max_purify_steps=10):
     axs[1].legend()
     axs[1].grid(True)
 
-    # B,C,D
-    axs[2].plot(range(len(B_list)), B_list, marker='v',color='darkorange', label='B')
-    axs[2].plot(range(len(C_list)), C_list, marker='<',color='brown', label='C')
-    axs[2].plot(range(len(D_list)), D_list, marker='^',color='violet', label='D')
-    axs[2].set_title("Evolution of B, C, D during Purification")
-    axs[2].set_xlabel("Purification Step")
-    axs[2].set_ylabel("Value")
-    axs[2].legend()
-    axs[2].grid(True)
-
-
     plt.tight_layout()
     plt.show()
     print("\n=== Summary ===")
@@ -160,7 +189,7 @@ def run_full_simulation(F_0, eta, epsilon_g, num_swaps, max_purify_steps=10):
     print(f"Fidelity after purification: {F_final}")
     if cost is not None:
         print(f"Purification steps needed: {n_purify}")
-        print(f"Effective cost (log{2**num_swaps} scale): {cost:.4f}")
+        print(f"Effective cost (log{num_swaps} scale): {cost:.4f}")
     else:
         print("Fail")
 
@@ -168,31 +197,67 @@ def run_full_simulation(F_0, eta, epsilon_g, num_swaps, max_purify_steps=10):
 # # ============== Superconducting ================ 1
 # epsilon_g=2.5e-3
 # eta=0.99400
-# # F_0 = 0.976
 # F_0 = 0.9879
-# # # =================== SiV ======================= 3
-epsilon_g=5e-4
-eta=1-1e-4
-F_0 = 0.9975
+# # # =================== SiV ======================= 2
+# epsilon_g=5e-4
+# eta=1-1e-4
+# F_0 = 0.989
 # # # #=================== NV ======================== 3
 # epsilon_g=3.5e-4
 # eta=0.99960
-# F_0 = 0.9981
-# # ================== TrIon ====================== 3
+# F_0 = 0.9982
+# # ================== TrIon ====================== 2
 # epsilon_g=5e-4
 # eta= 0.999999
-# F_0=0.9974
+# F_0 = 0.9979
 # # ================NeutralAtoms ================== 1
 # epsilon_g=2.5e-3
 # eta=0.99600
 # F_0 = 0.9886
-####################quasiIDEAL
-# epsilon_g=0
-# eta=1
+####################IDEAL
+# epsilon_g=0.001
+# eta=0.999
 # F_0 = 0.99999
 ####################IDEAL
-# epsilon_g=0.01
-# eta=0.99
-# F_0 = 0.95
-run_full_simulation(F_0, eta, epsilon_g, num_swaps=3)
-# find_optimal_swap_purify(F_0, eta, epsilon_g, max_swaps=10, max_purify_steps=2)
+epsilon_g=0
+eta=1
+# F_0 = 1
+# run_full_simulation(F_0, eta, epsilon_g, num_swaps=8)
+# find_optimal_swap_purify(F_0, eta, epsilon_g, max_swaps=100, max_purify_steps=2)
+# simulate_purification_FRIDay(0.989,0.989,eta,epsilon_g,20,2,be_print=True)
+
+# add this as a reason for two step dejmps
+
+nnnn = 200
+fff = np.linspace(0.85,0.999, nnnn)
+cost=np.zeros(nnnn)
+n_swap=np.zeros(nnnn)
+fid=np.zeros(nnnn)
+
+for kk in np.arange(nnnn):
+    cost[kk], n_swap[kk], fid[kk] = simulate_purification_FRIDay(fff[kk],fff[kk],eta,epsilon_g,20,2,be_print=False)
+ind_valid = np.nonzero(cost)
+fid_ind=np.argmin(cost[ind_valid])
+fid_valid = fff[ind_valid]
+best_target_fidelity = fid_valid[fid_ind]
+cost_valid=cost[ind_valid]
+best_exponent = cost_valid[fid_ind]
+
+print(f"best target =  {best_target_fidelity}      best exponent = {best_exponent}           swap = {n_swap}")
+
+cost3=np.zeros(nnnn)
+n_swap3=np.zeros(nnnn)
+fid3=np.zeros(nnnn)
+for kk in np.arange(nnnn):
+    cost3[kk], n_swap3[kk], fid3[kk] = simulate_purification_FRIDay(fff[kk],fff[kk],eta,epsilon_g,20,3,be_print=False)
+
+# plt.plot(fff, cost, 'b', fff, cost3,'r')
+plt.plot(fff, cost, "-b", label="2 step")
+plt.plot(fff, cost3, "-r", label="3 step")
+plt.xlabel("Fidelity")
+plt.ylabel("Effective cost $\lambda$")
+plt.title("Effective cost for multiple round purification")
+plt.legend()
+plt.grid(True)
+plt.show()
+# test(0.990,0.99960,10)
